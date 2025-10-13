@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import '../cortextPages_Styles/style.css';
+import { useAuth } from '../hooks/useAuth';
 
 const style = {
   containerStyle: {
@@ -77,34 +78,12 @@ const style = {
 
 export default function SubscribePage() {
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(null); // null = unknown
-  const [loading, setLoading] = useState(true);
+  const { isLoggedIn, isAdmin, loading: authLoading } = useAuth();
+
   const [delayedReady, setDelayedReady] = useState(false);
-
   const [hoveredImage, setHoveredImage] = useState(false);
-
   const [hoveredViewPlanButton, setViewPlanHoveredButton] = useState(false);
   const [hoveredDashButton, setDashHoveredButton] = useState(false);
-
-  // Check session status
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const res = await fetch('http://192.168.56.1:8000/api/check-auth/', {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        setIsLoggedIn(res.ok);
-      } catch (err) {
-        setIsLoggedIn(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
 
   // Delay before showing content or redirecting
   useEffect(() => {
@@ -116,17 +95,16 @@ export default function SubscribePage() {
   }, []);
 
   useEffect(() => {
-    if (delayedReady && !loading) {
+    if (delayedReady && !authLoading) {
       if (!isLoggedIn) {
         navigate('/login');
       } else if (isAdmin) {
         navigate('/adminDashboard');
       }
     }
-  }, [delayedReady, loading, isLoggedIn, isAdmin, navigate]);  
+  }, [delayedReady, authLoading, isLoggedIn, isAdmin, navigate]);
 
-  // Show loading spinner while waiting
-  if (!delayedReady || loading || isLoggedIn === null) {
+  if (!delayedReady || authLoading || isLoggedIn === null) {
     return (
       <div style={loadingContainerStyle}>
         <div style={spinnerStyle}></div>

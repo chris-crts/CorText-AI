@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 export function useAuth() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
