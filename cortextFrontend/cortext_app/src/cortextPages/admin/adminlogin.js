@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 import { 
@@ -23,6 +23,33 @@ export default function AdminLogin() {
   const [focusedInput, setFocusedInput] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('http://192.168.56.1:8000/api/check-auth/', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setAuthenticated(data.authenticated);
+          setIsAdmin(data.is_admin);
+        }
+      } catch (err) {
+        console.error('Auth check failed:', err);
+      } finally {
+        setAuthChecked(true);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
   const handleAdminLogin = async () => {
     setIsLoading(true);
     const res = await fetch('http://192.168.56.1:8000/api/admin-login/', {
@@ -46,6 +73,25 @@ export default function AdminLogin() {
     }
     setIsLoading(false);
   };
+
+  if (authChecked && authenticated && !isAdmin) {
+    return (
+      <div style={containerStyle}>
+        <motion.div 
+          style={cardStyle}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h2 style={headingStyle}>Access Denied</h2>
+          <p style={{ color: '#ccc', textAlign: 'center' }}>
+            You are logged in, but not authorized to access the admin panel.
+          </p>
+          <a href="/" style={linkStyle} className="mt-4 block text-center">Back to Home</a>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
