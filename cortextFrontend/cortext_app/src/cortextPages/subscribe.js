@@ -115,12 +115,15 @@ export default function SubscribePage() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Redirect if not logged in
   useEffect(() => {
-    if (delayedReady && !loading && isLoggedIn === false) {
-      navigate('/login');
+    if (delayedReady && !loading) {
+      if (!isLoggedIn) {
+        navigate('/login');
+      } else if (isAdmin) {
+        navigate('/adminDashboard');
+      }
     }
-  }, [delayedReady, loading, isLoggedIn, navigate]);
+  }, [delayedReady, loading, isLoggedIn, isAdmin, navigate]);  
 
   // Show loading spinner while waiting
   if (!delayedReady || loading || isLoggedIn === null) {
