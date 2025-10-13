@@ -117,9 +117,14 @@ def admin_login_view(request):
 @csrf_exempt
 def check_auth(request):
     if request.user.is_authenticated:
-        return JsonResponse({'authenticated': True})
+        return JsonResponse({
+            "authenticated": True,
+            "is_admin": getattr(request.user, 'is_admin', False),
+            "email": request.user.email
+        })
     else:
         return JsonResponse({'authenticated': False}, status=401)
+
 
 @csrf_exempt
 def logout_view(request):
