@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
-
 export function useAuth() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading] = useState(true); // Optional: for cinematic transitions
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -14,7 +13,9 @@ export function useAuth() {
         });
 
         if (res.ok) {
-          setIsLoggedIn(true);
+          const data = await res.json();
+          setIsLoggedIn(data.is_authenticated);
+          setIsAdmin(data.is_admin);
         } else {
           setIsLoggedIn(false);
         }
@@ -29,5 +30,5 @@ export function useAuth() {
     checkAuth();
   }, []);
 
-  return { isLoggedIn, loading, error };
+  return { isLoggedIn, isAdmin, loading, error };
 }
