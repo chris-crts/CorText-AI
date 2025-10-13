@@ -50,6 +50,38 @@ export default function AdminLogin() {
     checkAuth();
   }, []);
 
+  if (!authChecked) {
+    return (
+      <div style={containerStyle}>
+        <motion.div style={cardStyle}>
+          <p style={{ color: '#ccc', textAlign: 'center' }}>
+            Checking admin access...
+          </p>
+          <div style={spinnerStyle}></div>
+        </motion.div>
+      </div>
+    );
+  }  
+
+  if (authChecked && authenticated && !isAdmin) {
+    return (
+      <div style={containerStyle}>
+        <motion.div 
+          style={cardStyle}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5 }}
+        >
+          <h2 style={headingStyle}>Access Denied</h2>
+          <p style={{ color: '#ccc', textAlign: 'center' }}>
+            You are logged in, but not authorized to access the admin panel.
+          </p>
+          <a href="/" style={linkStyle} className="mt-4 block text-center">Back to Home</a>
+        </motion.div>
+      </div>
+    );
+  }
+
   const handleAdminLogin = async () => {
     setIsLoading(true);
     const res = await fetch('http://192.168.56.1:8000/api/admin-login/', {
@@ -73,25 +105,6 @@ export default function AdminLogin() {
     }
     setIsLoading(false);
   };
-
-  if (authChecked && authenticated && !isAdmin) {
-    return (
-      <div style={containerStyle}>
-        <motion.div 
-          style={cardStyle}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-        >
-          <h2 style={headingStyle}>Access Denied</h2>
-          <p style={{ color: '#ccc', textAlign: 'center' }}>
-            You are logged in, but not authorized to access the admin panel.
-          </p>
-          <a href="/" style={linkStyle} className="mt-4 block text-center">Back to Home</a>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
