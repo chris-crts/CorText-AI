@@ -67,18 +67,27 @@ def login_view(request):
         email = data.get('email')
         password = data.get('password')
 
-        user = authenticate(request, email=email, password=password)
-        #print("Authenticated user:", request.user)
+        User = get_user_model()
 
+        try:
+            user_obj = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return JsonResponse({'error': 'User not found'}, status=404)
+
+        user = authenticate(request, username=user_obj.username, password=password)
         if user is None:
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
 
-        login(request, user)  # ✅ Sets session cookie
+        login(request, user)
 
-        if email == 'cortextai@admin.com' and user.is_admin:
+        if getattr(user, 'is_admin', False):
             return JsonResponse({'step': 'admin_auth_required'})
 
-        return JsonResponse({'message': 'User logged in'})
+        return JsonResponse({
+            'message': 'User logged in',
+            'email': user.email,
+            'is_admin': False
+        })
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -124,8 +133,6 @@ def check_auth(request):
         })
     else:
         return JsonResponse({'authenticated': False}, status=401)
-
-
 
 @csrf_exempt
 def logout_view(request):
