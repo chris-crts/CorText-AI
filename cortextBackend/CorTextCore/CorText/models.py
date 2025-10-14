@@ -34,6 +34,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 class ManualAdmin(models.Model):
     username = models.CharField(max_length=150, unique=True)
     password = models.CharField(max_length=128)
+    is_admin = models.BooleanField(default=True)
 
     def __str__(self):
         return self.username

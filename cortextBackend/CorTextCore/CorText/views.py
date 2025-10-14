@@ -132,7 +132,7 @@ def admin_login_view(request):
             return JsonResponse({'error': 'Admin not found'}, status=404)
 
         if check_password(password, admin.password):
-            return JsonResponse({'message': 'Admin fully authenticated'})
+            return JsonResponse({'message': 'Admin fully authenticated', 'admin_verified': True})
         else:
             return JsonResponse({'error': 'Invalid admin credentials'}, status=403)
 
