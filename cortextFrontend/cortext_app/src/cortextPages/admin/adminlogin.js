@@ -99,12 +99,6 @@ export default function AdminLogin() {
     );
   }
 
-  // ✅ Redirect if already authenticated as admin
-  if (authenticated && isAdmin) {
-    window.location.href = '/adminDash';
-    return null;
-  }
-
   const handleAdminLogin = async () => {
     setIsLoading(true);
     setError('');
@@ -136,71 +130,73 @@ export default function AdminLogin() {
     }
   };
 
-  return (
-    <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
-      <motion.div 
-        style={cardStyle}
-        initial={{ scale: 0.9, y: 50 }}
-        animate={{ scale: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <h2 className="text-2xl font-bold mb-6 text-center" style={headingStyle}>Admin Login</h2>
-
-        <input
-          type="text"
-          placeholder="Username"
-          style={focusedInput === 'username' ? inputFocusStyle : inputStyle}
-          value={username}
-          onChange={e => {
-            setUsername(e.target.value);
-            setError('');
-          }}
-          onFocus={() => setFocusedInput('username')}
-          onBlur={() => setFocusedInput(null)}
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          style={focusedInput === 'password' ? inputFocusStyle : inputStyle}
-          value={password}
-          onChange={e => {
-            setPassword(e.target.value);
-            setError('');
-          }}
-          onFocus={() => setFocusedInput('password')}
-          onBlur={() => setFocusedInput(null)}
-        />
-
-        {error && (
-          <motion.div 
-            style={errorStyle}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            {error}
-          </motion.div>
-        )}
-
-        <motion.button
-          onClick={handleAdminLogin}
-          style={buttonStyle}
-          whileHover={{ ...buttonHoverStyle }}
-          whileTap={{ ...buttonActiveStyle }}
-          disabled={isLoading}
+  if (authenticated && isAdmin) {
+    return (
+      <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
+        <motion.div 
+          style={cardStyle}
+          initial={{ scale: 0.9, y: 50 }}
+          animate={{ scale: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
         >
-          {isLoading ? (
-            <>
-              <span style={spinnerStyle}></span>
-              Authenticating...
-            </>
-          ) : (
-            'Authenticate'
-          )}
-        </motion.button>
+          <h2 className="text-2xl font-bold mb-6 text-center" style={headingStyle}>Admin Login</h2>
 
-        <a href="/" style={linkStyle} className="mt-4 block text-center">Back to Home</a>
+          <input
+            type="text"
+            placeholder="Username"
+            style={focusedInput === 'username' ? inputFocusStyle : inputStyle}
+            value={username}
+            onChange={e => {
+              setUsername(e.target.value);
+              setError('');
+            }}
+            onFocus={() => setFocusedInput('username')}
+            onBlur={() => setFocusedInput(null)}
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            style={focusedInput === 'password' ? inputFocusStyle : inputStyle}
+            value={password}
+            onChange={e => {
+              setPassword(e.target.value);
+              setError('');
+            }}
+            onFocus={() => setFocusedInput('password')}
+            onBlur={() => setFocusedInput(null)}
+          />
+
+          {error && (
+            <motion.div 
+              style={errorStyle}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+            >
+              {error}
+            </motion.div>
+          )}
+
+          <motion.button
+            onClick={handleAdminLogin}
+            style={buttonStyle}
+            whileHover={{ ...buttonHoverStyle }}
+            whileTap={{ ...buttonActiveStyle }}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <span style={spinnerStyle}></span>
+                Authenticating...
+              </>
+            ) : (
+              'Authenticate'
+            )}
+          </motion.button>
+
+          <a href="/" style={linkStyle} className="mt-4 block text-center">Back to Home</a>
+        </motion.div>
       </motion.div>
-    </motion.div>
-  );
+    );
+  }
 }

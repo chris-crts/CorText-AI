@@ -1,41 +1,61 @@
-import React from 'react';
+import React, { useState} from 'react';
+import { motion } from 'framer-motion';
+import {
+  containerStyle,
+  cardStyle,
+  headingStyle,
+  inputStyle,
+  inputFocusStyle,
+  buttonStyle,
+  buttonHoverStyle,
+  buttonActiveStyle,
+  errorStyle,
+  successStyle,
+} from '../../cortextPages_Styles/style';
 
-const stats = [
-  { label: 'Users', value: 1200 },
-  { label: 'Active Sessions', value: 87 },
-  { label: 'Errors', value: 3 },
-  { label: 'Revenue', value: '$4,500' },
-];
+export default function AdminDash() {
+  const [showPanel, setShowPanel] = useState(false);
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [focusedInput, setFocusedInput] = useState(null);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-const styles = {
-  logoutButton: {
-    width: '100%',
-    padding: '0.9rem 1.5rem',
-    background: 'linear-gradient(45deg, #dc143c, #ff1744)',
-    border: '2px solid rgba(220, 20, 60, 0.5)',
-    borderRadius: '12px',
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: '0.95rem',
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
-    boxShadow: '0 4px 15px rgba(220, 20, 60, 0.3)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '0.5rem',
-  },
-};
+  const handleUpdate = async () => {
+    setError('');
+    setSuccess('');
 
-function AdminDash() {
+    try {
+      const res = await fetch('http://192.168.56.1:8000/api/update-manual-admin/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          username: newUsername,
+          password: newPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Update failed');
+        return;
+      }
+
+      setSuccess('Credentials updated successfully');
+      setNewUsername('');
+      setNewPassword('');
+    } catch (err) {
+      setError('Unexpected error occurred');
+    }
+  };
 
   const handleLogout = async () => {
     try {
       const response = await fetch('http://192.168.56.1:8000/api/logout/', {
         method: 'POST',
-        credentials: 'include', // ensures cookies/session are sent
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -43,9 +63,8 @@ function AdminDash() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log(data.message); // Optional: show "Logged out"
-        // Redirect or update UI
-        window.location.href = '/login'; // or use navigate('/login') if using React Router
+        console.log(data.message);
+        window.location.href = '/login';
       } else {
         console.error('Logout failed');
       }
@@ -55,101 +74,85 @@ function AdminDash() {
   };
 
   return (
-    <div
-      style={{
-        padding: '2rem',
-        fontFamily: 'Segoe UI, Arial, sans-serif',
-        background: 'linear-gradient(135deg, #e3eafc 0%, #f9f9f9 100%)',
-        minHeight: '100vh',
-      }}
-    >
-      <div
-        style={{
-          background: '#fff',
-          borderRadius: '12px',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
-          padding: '6rem',
-          maxWidth: '700px',
-          margin: '0 auto',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '2rem'
-        }}
+    <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
+      <motion.div 
+        style={cardStyle}
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
       >
-        <h1
-          style={{
-            fontSize: '2.5rem',
-            fontWeight: 700,
-            color: '#2a3a5e',
-            marginBottom: '0.5rem',
-            letterSpacing: '1px',
-            textAlign: 'center',
-          }}
+        <h2 style={headingStyle}>Welcome, Admin</h2>
+
+        <motion.button
+          onClick={() => setShowPanel(!showPanel)}
+          style={buttonStyle}
+          whileHover={buttonHoverStyle}
+          whileTap={buttonActiveStyle}
         >
-          CorText Admin Dashboard
-        </h1>
-        <p
-          style={{
-            color: '#6b7a99',
-            textAlign: 'center',
-            marginBottom: '2rem',
-            fontSize: '1.1rem',
-          }}
-        >
-          Welcome to your system overview
-        </p>
-        <div
-          style={{
-            display: 'flex',
-            gap: '2rem',
-            justifyContent: 'center',
-            marginTop: '2rem',
-          }}
-        >
-          {stats.map((stat) => (
-            <div
-              key={stat.label}
-              style={{
-                background: 'linear-gradient(135deg, #f5f8ff 0%, #e9eefa 100%)',
-                borderRadius: '10px',
-                padding: '1.5rem 1rem',
-                minWidth: '140px',
-                textAlign: 'center',
-                boxShadow: '0 2px 12px rgba(42,58,94,0.07)',
-                border: '1px solid #e3eafc',
-                transition: 'transform 0.2s',
+          {showPanel ? 'Hide Update Panel' : 'Update Credentials'}
+        </motion.button>
+
+        {showPanel && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            style={{ marginTop: '1rem' }}
+          >
+            <input
+              type="text"
+              placeholder="New Username"
+              style={focusedInput === 'username' ? inputFocusStyle : inputStyle}
+              value={newUsername}
+              onChange={e => {
+                setNewUsername(e.target.value);
+                setError('');
+                setSuccess('');
               }}
+              onFocus={() => setFocusedInput('username')}
+              onBlur={() => setFocusedInput(null)}
+            />
+
+            <input
+              type="password"
+              placeholder="New Password"
+              style={focusedInput === 'password' ? inputFocusStyle : inputStyle}
+              value={newPassword}
+              onChange={e => {
+                setNewPassword(e.target.value);
+                setError('');
+                setSuccess('');
+              }}
+              onFocus={() => setFocusedInput('password')}
+              onBlur={() => setFocusedInput(null)}
+            />
+
+            {error && (
+              <motion.div style={errorStyle} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                {error}
+              </motion.div>
+            )}
+
+            {success && (
+              <motion.div style={successStyle} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                {success}
+              </motion.div>
+            )}
+
+            <motion.button
+              onClick={handleUpdate}
+              style={{ ...buttonStyle, marginTop: '1rem' }}
+              whileHover={buttonHoverStyle}
+              whileTap={buttonActiveStyle}
             >
-              <div
-                style={{
-                  fontSize: '2.2rem',
-                  fontWeight: 'bold',
-                  color: '#2a3a5e',
-                  marginBottom: '0.5rem',
-                }}
-              >
-                {stat.value}
-              </div>
-              <div
-                style={{
-                  color: '#6b7a99',
-                  fontSize: '1.05rem',
-                  fontWeight: 500,
-                  letterSpacing: '0.5px',
-                }}
-              >
-                {stat.label}
-              </div>
-            </div>
-          ))}
-        </div>
-        <button style={styles.logoutButton} onClick={handleLogout}>
-          🚪 Logout
-        </button>
-      </div>
-    </div>
+              Save Changes
+            </motion.button>
+          </motion.div>
+        )}
+      </motion.div>
+      <button style={buttonStyle} onClick={handleLogout}>
+        🚪 Logout
+      </button>
+    </motion.div>
   );
 }
-
-export default AdminDash;

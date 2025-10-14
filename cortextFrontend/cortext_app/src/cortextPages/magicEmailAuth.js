@@ -37,7 +37,7 @@ export default function MagicEmailAuth() {
       } else if (!isMagicAdmin) {
         navigate('/unauthorized');
       } else {
-        navigate('/adminDash');
+        navigate('/admin-login');
       }
     }
   }, [authChecked, authenticated, isMagicAdmin, navigate]);
