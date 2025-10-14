@@ -67,14 +67,7 @@ def login_view(request):
         email = data.get('email')
         password = data.get('password')
 
-        User = get_user_model()
-
-        try:
-            user_obj = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return JsonResponse({'error': 'User not found'}, status=404)
-
-        user = authenticate(request, username=user_obj.username, password=password)
+        user = authenticate(request, username=email, password=password)
         if user is None:
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
 
@@ -91,6 +84,31 @@ def login_view(request):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def verify_manual_admin(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+
+            if not username or not password:
+                return JsonResponse({'error': 'Missing credentials'}, status=400)
+
+            try:
+                admin = ManualAdmin.objects.get(username=username)
+                if admin.password == password:
+                    return JsonResponse({'authenticated': True})
+                else:
+                    return JsonResponse({'error': 'Invalid password'}, status=401)
+            except ManualAdmin.DoesNotExist:
+                return JsonResponse({'error': 'Admin not found'}, status=404)
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid method'}, status=405)
 
 @csrf_exempt
 def admin_login_view(request):
@@ -134,11 +152,34 @@ def check_auth(request):
     else:
         return JsonResponse({'authenticated': False}, status=401)
 
+from django.contrib.auth.hashers import make_password, check_password
+@csrf_exempt
+def update_manual_admin(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            password = data.get('password')
+
+            if not username or not password:
+                return JsonResponse({'error': 'Username and password required'}, status=400)
+
+            hashed_password = make_password(password)
+
+            admin, created = ManualAdmin.objects.update_or_create(
+                username=username,
+                defaults={'password': hashed_password}
+            )
+
+            return JsonResponse({'message': 'Credentials updated'})
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid method'}, status=405)
+
 @csrf_exempt
 def check_magic_email_auth(request):
-    print("User:", request.user)
-    print("Is authenticated:", request.user.is_authenticated)
-
     if request.user.is_authenticated:
         is_magic_admin = (
             request.user.email == 'cortextai@admin.com' and
