@@ -136,9 +136,9 @@ def check_auth(request):
 
 @csrf_exempt
 def check_magic_email_auth(request):
-    """
-    Checks if the current session user is authenticated and matches the magic admin email.
-    """
+    print("User:", request.user)
+    print("Is authenticated:", request.user.is_authenticated)
+
     if request.user.is_authenticated:
         is_magic_admin = (
             request.user.email == 'cortextai@admin.com' and
@@ -150,7 +150,7 @@ def check_magic_email_auth(request):
             'email': request.user.email
         })
     else:
-        return JsonResponse({'authenticated': False}, status=401)
+        return JsonResponse({'authenticated': False}, status=401)    
 
 @csrf_exempt
 def logout_view(request):
