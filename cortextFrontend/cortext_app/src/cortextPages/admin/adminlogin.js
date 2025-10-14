@@ -91,7 +91,7 @@ export default function AdminLogin() {
       <div style={containerStyle}>
         <motion.div style={cardStyle}>
           <p style={{ color: '#ccc', textAlign: 'center' }}>
-            You must log in to access the admin panel.
+            You must log in to access the Admin Login Page.
           </p>
           <a href="/login" style={Styles.Go_button} className="mt-4 block text-center">Go to Login</a>
         </motion.div>

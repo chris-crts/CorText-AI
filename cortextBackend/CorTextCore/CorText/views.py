@@ -4,7 +4,7 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password, make_password
 from .models import CustomUser, ManualAdmin
 import json
 
@@ -140,19 +140,7 @@ def admin_login_view(request):
         return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
-@csrf_exempt
-def check_auth(request):
-    if request.user.is_authenticated:
-        return JsonResponse({
-            "is_authenticated": True,
-            "is_admin": getattr(request.user, 'is_admin', False),
-            "email": request.user.email
-        })
-    else:
-        return JsonResponse({'authenticated': False}, status=401)
-
-from django.contrib.auth.hashers import make_password, check_password
+    
 @csrf_exempt
 def update_manual_admin(request):
     if request.method == 'POST':
@@ -177,6 +165,17 @@ def update_manual_admin(request):
             return JsonResponse({'error': str(e)}, status=500)
 
     return JsonResponse({'error': 'Invalid method'}, status=405)
+
+@csrf_exempt
+def check_auth(request):
+    if request.user.is_authenticated:
+        return JsonResponse({
+            "is_authenticated": True,
+            "is_admin": getattr(request.user, 'is_admin', False),
+            "email": request.user.email
+        })
+    else:
+        return JsonResponse({'authenticated': False}, status=401)
 
 @csrf_exempt
 def check_magic_email_auth(request):
