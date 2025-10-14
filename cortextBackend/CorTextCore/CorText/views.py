@@ -145,7 +145,7 @@ def admin_login_view(request):
 def check_auth(request):
     if request.user.is_authenticated:
         return JsonResponse({
-            "authenticated": True,
+            "is_authenticated": True,
             "is_admin": getattr(request.user, 'is_admin', False),
             "email": request.user.email
         })
