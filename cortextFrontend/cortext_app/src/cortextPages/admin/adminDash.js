@@ -1,5 +1,7 @@
-import React, { useState} from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+
 import {
   containerStyle,
   cardStyle,
@@ -20,6 +22,28 @@ export default function AdminDash() {
   const [focusedInput, setFocusedInput] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [checkingAuth, setCheckingAuth] = useState(true); // 🔒 auth gate
+  const [delayedReady, setDelayedReady] = useState(false);
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDelayedReady(true);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 🔐 Verify admin second-layer login
+  useEffect(() => {
+    const verified = localStorage.getItem('admin_verified');
+    if (verified !== 'true') {
+      navigate('/admin-login');
+    } else {
+      setCheckingAuth(false); // ✅ allow rendering
+    }
+  }, [navigate]);
 
   const handleUpdate = async () => {
     setError('');
@@ -51,6 +75,7 @@ export default function AdminDash() {
     }
   };
 
+  // 🚪 Logout and clear admin flag
   const handleLogout = async () => {
     try {
       const response = await fetch('http://192.168.56.1:8000/api/logout/', {
@@ -62,6 +87,7 @@ export default function AdminDash() {
       });
 
       if (response.ok) {
+        localStorage.removeItem('admin_verified'); // ✅ clear second-layer flag
         const data = await response.json();
         console.log(data.message);
         window.location.href = '/login';
@@ -73,7 +99,21 @@ export default function AdminDash() {
     }
   };
 
-  return (
+  if (checkingAuth || !delayedReady) {
+    return (
+      <motion.div
+        className="min-h-screen flex items-center justify-center bg-black"
+        style={containerStyle}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
+        <h2 style={{ color: 'skyblue', fontSize: '1.5rem' }}>🔐 Verifying Admin Access...</h2>
+      </motion.div>
+    );
+  }
+
+   return (
     <motion.div className="min-h-screen flex items-center justify-center bg-black" style={containerStyle}>
       <motion.div 
         style={cardStyle}

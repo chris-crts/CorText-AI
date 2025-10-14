@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 import { 
   containerStyle,
@@ -49,6 +50,8 @@ export default function AdminLogin() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
 
+  const navigate = useNavigate();
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -91,7 +94,7 @@ export default function AdminLogin() {
       <div style={containerStyle}>
         <motion.div style={cardStyle}>
           <p style={{ color: '#ccc', textAlign: 'center' }}>
-            You must log in to access the Admin Login Page.
+            You must log in to access the Admin Site.
           </p>
           <a href="/login" style={Styles.Go_button} className="mt-4 block text-center">Go to Login</a>
         </motion.div>
@@ -112,6 +115,11 @@ export default function AdminLogin() {
       });
 
       const data = await res.json();
+
+      if (data.admin_verified) {
+        localStorage.setItem('admin_verified', 'true');
+        navigate('/adminDash');
+      }
 
       if (!res.ok) {
         setError(data.error || 'Network error');
