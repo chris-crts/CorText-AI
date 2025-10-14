@@ -99,7 +99,7 @@ export default function SubscribePage() {
       if (!isLoggedIn) {
         navigate('/login');
       } else if (isAdmin) {
-        navigate('/adminDashboard');
+        navigate('/admin-login');
       }
     }
   }, [delayedReady, authLoading, isLoggedIn, isAdmin, navigate]);

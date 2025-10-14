@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 
 const styles = {
   container: {
@@ -322,13 +324,64 @@ const styles = {
   },
 };
 
+const spinnerStyle = {
+  display: 'inline-block',
+  width: '24px',
+  height: '24px',
+  border: '3px solid rgba(255, 255, 255, 0.3)',
+  borderTop: '3px solid #4B9CD3',
+  borderRadius: '50%',
+  animation: 'spin 0.8s linear infinite',
+  marginBottom: '1rem'
+};
+
+const loadingContainerStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100vh',
+  backgroundColor: '#f4f8fc',
+  color: '#4B9CD3',
+  fontFamily: 'sans-serif'
+};
+
+const loadingTextStyle = {
+  fontSize: '1.2rem',
+  fontWeight: '500',
+  textAlign: 'center'
+};
+
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const { isLoggedIn, isAdmin, loading: authLoading } = useAuth();
+
+  const [delayedReady, setDelayedReady] = useState(false);
+
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sidePanelExpanded, setSidePanelExpanded] = useState(false);
   const [showIdCard, setShowIdCard] = useState(false);
   const [hoveredImage, setHoveredImage] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDelayedReady(true);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (delayedReady && !authLoading) {
+      if (!isLoggedIn) {
+        navigate('/login');
+      } else if (isAdmin) {
+        navigate('/admin-login');
+      }
+    }
+  }, [delayedReady, authLoading, isLoggedIn, isAdmin, navigate]);
 
   const fetchUserData = useCallback(async () => {
     setLoading(true);
@@ -358,6 +411,14 @@ export default function Dashboard() {
     fetchUserData();
   }, [fetchUserData]); // ✅ Warning gone
 
+  if (!delayedReady || authLoading || isLoggedIn === null) {
+    return (
+      <div style={loadingContainerStyle}>
+        <div style={spinnerStyle}></div>
+        <p style={loadingTextStyle}>Preparing your CorText experience...</p>
+      </div>
+    );
+  }
 
   function getCookie(name) {
     let cookieValue = null;
