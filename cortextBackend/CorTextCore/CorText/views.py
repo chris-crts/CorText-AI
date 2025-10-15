@@ -140,9 +140,16 @@ def admin_login_view(request):
         return JsonResponse({'error': 'Invalid JSON format'}, status=400)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def list_manual_admins(request):
+    if request.method == 'GET':
+        admins = ManualAdmin.objects.values_list('username', flat=True)
+        return JsonResponse({'admins': list(admins)})
+    return JsonResponse({'error': 'Invalid method'}, status=405)
     
 @csrf_exempt
-def update_manual_admin(request):
+def create_manual_admin(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
@@ -160,6 +167,54 @@ def update_manual_admin(request):
             )
 
             return JsonResponse({'message': 'Credentials updated'})
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid method'}, status=405)
+
+@csrf_exempt
+def edit_manual_admin(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+            new_password = data.get('password')
+
+            if not username or not new_password:
+                return JsonResponse({'error': 'Username and new password required'}, status=400)
+
+            try:
+                admin = ManualAdmin.objects.get(username=username)
+            except ManualAdmin.DoesNotExist:
+                return JsonResponse({'error': 'Admin not found'}, status=404)
+
+            admin.password = make_password(new_password)
+            admin.save()
+
+            return JsonResponse({'message': 'Password updated successfully'})
+
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    return JsonResponse({'error': 'Invalid method'}, status=405)
+
+@csrf_exempt
+def delete_manual_admin(request):
+    if request.method == 'POST':
+        try:
+            data = json.loads(request.body)
+            username = data.get('username')
+
+            if not username:
+                return JsonResponse({'error': 'Username required'}, status=400)
+
+            try:
+                admin = ManualAdmin.objects.get(username=username)
+                admin.delete()
+                return JsonResponse({'message': 'Admin deleted successfully'})
+            except ManualAdmin.DoesNotExist:
+                return JsonResponse({'error': 'Admin not found'}, status=404)
 
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=500)

@@ -16,4 +16,9 @@ urlpatterns = [
     
     path('api/profile/', views.get_user_profile),
     
+    path('api/edit-manual-admin/', views.edit_manual_admin, name='update_manual_admin'),
+    path('api/delete-manual-admin/', views.delete_manual_admin, name='delete_manual_admin'),
+    path('api/list-manual-admins/', views.list_manual_admins, name='list_manual_admins'),
+    path('api/create-manual-admin/', views.create_manual_admin, name='create_manual_admin'),
+    
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
