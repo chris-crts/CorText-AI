@@ -16,6 +16,11 @@ import {
 } from '../../cortextPages_Styles/style';
 
 export default function AdminDash() {
+  const [admins, setAdmins] = useState([]);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+
   const [showPanel, setShowPanel] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -45,12 +50,84 @@ export default function AdminDash() {
     }
   }, [navigate]);
 
-  const handleUpdate = async () => {
+  useEffect(() => {
+    const fetchAdmins = async () => {
+      try {
+        const res = await fetch('http://192.168.56.1:8000/api/list-manual-admins/', {
+          method: 'GET',
+          credentials: 'include',
+        });
+        const data = await res.json();
+        setAdmins(data.admins || []);
+      } catch (err) {
+        console.error('Failed to fetch admins:', err);
+      }
+    };
+
+    if (!checkingAuth) fetchAdmins();
+  }, [checkingAuth]);
+
+  const handleEdit = async (originalUsername) => {
+    try {
+      const res = await fetch('http://192.168.56.1:8000/api/edit-manual-admin/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          username: originalUsername,
+          new_username: editUsername,
+          password: editPassword,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Edit failed');
+        return;
+      }
+
+      setSuccess('Admin updated successfully');
+      setEditingIndex(null);
+      setEditUsername('');
+      setEditPassword('');
+      setAdmins(prev => prev.map(a => a === originalUsername ? editUsername : a));
+    } catch (err) {
+      setError('Unexpected error during edit');
+    }
+  };
+
+  const handleDelete = async (username) => {
+    const confirmed = window.confirm(`Are you sure you want to delete "${username}"?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch('http://192.168.56.1:8000/api/delete-manual-admin/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Delete failed');
+        return;
+      }
+
+      setSuccess('Admin deleted successfully');
+      setAdmins(prev => prev.filter(a => a !== username));
+    } catch (err) {
+      setError('Unexpected error during delete');
+    }
+  };
+
+
+  const handleUserCred = async () => {
     setError('');
     setSuccess('');
 
     try {
-      const res = await fetch('http://192.168.56.1:8000/api/update-manual-admin/', {
+      const res = await fetch('http://192.168.56.1:8000/api/edit-manual-admin/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -129,7 +206,7 @@ export default function AdminDash() {
           whileHover={buttonHoverStyle}
           whileTap={buttonActiveStyle}
         >
-          {showPanel ? 'Hide Update Panel' : 'Update Credentials'}
+          {showPanel ? 'Hide Credentials Panel' : 'Manage Credentials'}
         </motion.button>
 
         {showPanel && (
@@ -180,7 +257,7 @@ export default function AdminDash() {
             )}
 
             <motion.button
-              onClick={handleUpdate}
+              onClick={handleUserCred}
               style={{ ...buttonStyle, marginTop: '1rem' }}
               whileHover={buttonHoverStyle}
               whileTap={buttonActiveStyle}
@@ -189,10 +266,135 @@ export default function AdminDash() {
             </motion.button>
           </motion.div>
         )}
+        <h3 style={adminTextStyle}>Existing Admins</h3>
+        {admins.map((admin, index) => (
+          <motion.div
+            key={admin}
+            style={adminCardStyle}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            {editingIndex === index ? (
+              <>
+                <input
+                  type="text"
+                  placeholder="Edit Username"
+                  style={editInputStyle}
+                  value={editUsername}
+                  onChange={e => setEditUsername(e.target.value)}
+                />
+                <input
+                  type="password"
+                  placeholder="Edit Password"
+                  style={editInputStyle}
+                  value={editPassword}
+                  onChange={e => setEditPassword(e.target.value)}
+                />
+                <button style={SavebuttonStyle} onClick={() => handleEdit(admin)}>Save</button>
+                <button style={X_ButtonStyle} onClick={() => setEditingIndex(null)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <div style={usernameStyle}><strong>Username:</strong> {admin}</div>
+                  <button style={editButtonStyle} onClick={() => {
+                    setEditingIndex(index);
+                    setEditUsername(admin);
+                  }}>Edit</button>
+                  <button style={X_ButtonStyle} onClick={() => handleDelete(admin)}>Delete</button>
+              </>
+            )}
+          </motion.div>
+        ))}
+        <button style={LogoutButtonStyle} onClick={handleLogout}>
+          🚪 Logout
+        </button>
       </motion.div>
-      <button style={buttonStyle} onClick={handleLogout}>
-        🚪 Logout
-      </button>
     </motion.div>
   );
 }
+
+const usernameStyle = {
+  fontSize: '1rem',
+  fontWeight: '500',
+  marginBottom: '1rem',
+};
+
+const adminCardStyle = {
+  backgroundColor: '#1a1a1a',
+  border: '1px solid #333',
+  borderRadius: '10px',
+  padding: '1.5rem',
+  marginTop: '1rem',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+  color: '#e0e0e0',
+  transition: 'all 0.3s ease',
+};
+
+const adminTextStyle = {
+  fontSize: '2rem',
+  fontWeight: '500',
+  marginTop: '5rem',
+  marginBottom: '0.5rem',
+  color: '#4B9CD3',
+  textAlign: 'center',
+};
+
+const editInputStyle = {
+  width: '100%',
+  padding: '0.75rem',
+  marginBottom: '0.75rem',
+  borderRadius: '6px',
+  border: '1px solid #555',
+  backgroundColor: '#2a2a2a',
+  color: '#f0f0f0',
+  fontSize: '0.95rem',
+};
+
+const editButtonStyle = {
+  padding: '0.5rem 1rem',
+  marginRight: '0.5rem',
+  borderRadius: '6px',
+  border: 'none',
+  backgroundColor: '#007acc',
+  color: '#fff',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'background-color 0.3s ease',
+};
+
+const X_ButtonStyle = {
+  padding: '0.5rem 1rem',
+  borderRadius: '6px',
+  border: 'none',
+  backgroundColor: '#c90f0fff',
+  color: '#fff',
+  fontWeight: '600',
+  cursor: 'pointer',
+  transition: 'background-color 0.3s ease',
+};
+
+const SavebuttonStyle = {
+  padding: '0.5rem 1rem',
+  marginRight: '0.5rem',
+  borderRadius: '6px',
+  border: 'none',
+  backgroundColor: '#444',
+  color: '#fff',
+  fontWeight: '500',
+  cursor: 'pointer',
+  transition: 'background-color 0.3s ease',
+};
+
+const LogoutButtonStyle = {
+  padding: '0.6rem 1.2rem',
+  marginTop: '2rem',
+  borderRadius: '8px',
+  border: 'none',
+  backgroundColor: '#cc3333',
+  color: '#fff',
+  fontWeight: '600',
+  fontSize: '1rem',
+  cursor: 'pointer',
+  boxShadow: '0 4px 10px rgba(0, 0, 0, 0.3)',
+  transition: 'background-color 0.3s ease, transform 0.2s ease',
+};
