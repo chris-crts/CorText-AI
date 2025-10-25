@@ -115,4 +115,8 @@ class Medicine_Extractor:
             for id_ in ids:
                 f.write(id_ + "\n")
 
-    
+    def load_faiss_index(self, index_path: str = "medicines.ann") -> faiss.IndexFlatL2:
+        """Load a FAISS index from disk."""
+        index = faiss.read_index(index_path)
+        logger.info(f"📂 FAISS index loaded from {index_path}")
+        return index
