@@ -38,3 +38,17 @@ class ManualAdmin(models.Model):
 
     def __str__(self):
         return self.username
+
+class Medicine(models.Model):
+    name = models.CharField(max_length=255)
+    brand_name = models.JSONField(default=list)
+    generic_name = models.JSONField(default=list)
+    active_ingredient = models.JSONField(default=list)
+    indications = models.TextField(blank=True)
+    warnings = models.TextField(blank=True)
+    dosage = models.TextField(blank=True)
+    source = models.CharField(max_length=255, default="openFDA")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
