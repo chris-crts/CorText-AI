@@ -1,45 +1,75 @@
-from transformers import AutoTokenizer, AutoModel
-
-import logging
-logger = logging.getLogger(__name__)
-
-from annoy import AnnoyIndex
+import requests
+import torch
+import faiss
 import numpy as np
 from functools import lru_cache
-from datetime import datetime
-import torch
-import json
+from transformers import AutoTokenizer, AutoModel
+import logging
 
-import requests
+logger = logging.getLogger(__name__)
 
 class Medicine_Extractor:
-  def __init__(self, modelName="dmis-lab/biobert-base-cased-v1.1"):
-    self.tokenizer = AutoTokenizer.from_pretrained(modelName)
-    self.model = AutoModel.from_pretrained(modelName)
-    self.vectorDim = 768
-    
-  @lru_cache(maxsize=1024)
-  def embed(self, text: str) -> np.ndarray:
-      if not text or len(text.strip()) < 3:
-          logger.warning("Empty or short text passed to embed()")
-          return np.zeros(self.vector_dim)
+    def __init__(self, modelName="dmis-lab/biobert-base-cased-v1.1"):
+        self.tokenizer = AutoTokenizer.from_pretrained(modelName)
+        self.model = AutoModel.from_pretrained(modelName)
+        self.vector_dim = self.model.config.hidden_size  # safer than hardcoding
 
-      inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
-      with torch.no_grad():
-          outputs = self.model(**inputs)
-          embeddings = outputs.last_hidden_state.mean(dim=1)
-      return embeddings.squeeze().numpy()
+    @lru_cache(maxsize=1024)
+    def embed(self, text: str) -> np.ndarray:
+        """Embed a single text (truncated at 512 tokens)."""
+        if not text or len(text.strip()) < 3:
+            logger.warning("Empty or short text passed to embed()")
+            return np.zeros(self.vector_dim)
 
-  def warmup(self) -> None:
-      _ = self.embed("warmup")
-      logger.info("✅ Embedding model warmed up.")
-      
-  def get_medicine_profile(self, drug_name: str) -> dict:
-    
+        inputs = self.tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=512
+        )
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            embeddings = outputs.last_hidden_state.mean(dim=1)
+        return embeddings.squeeze().numpy()
+
+    def embed_chunks(self, text: str, chunk_size: int = 512, overlap: int = 50) -> list:
+        """
+        Split long text into chunks of up to `chunk_size` tokens,
+        with optional overlap, and return embeddings for each chunk.
+        """
+        tokens = self.tokenizer.tokenize(text)
+        embeddings = []
+
+        for i in range(0, len(tokens), chunk_size - overlap):
+            chunk_tokens = tokens[i:i + chunk_size]
+            if not chunk_tokens:
+                continue
+            chunk_text = self.tokenizer.convert_tokens_to_string(chunk_tokens)
+
+            inputs = self.tokenizer(
+                chunk_text,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=chunk_size
+            )
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                chunk_embedding = outputs.last_hidden_state.mean(dim=1)
+            embeddings.append(chunk_embedding.squeeze().numpy())
+
+        return embeddings
+
+    def warmup(self) -> None:
+        """Trigger model loading during startup."""
+        _ = self.embed("warmup")
+        logger.info("✅ Embedding model warmed up.")
+
+    def get_medicine_profile(self, drug_name: str) -> dict:
+        """Fetch medicine profile from openFDA API."""
         url = f"https://api.fda.gov/drug/label.json?search=active_ingredient:{drug_name}&limit=1"
-        
         response = requests.get(url)
-        
         if response.status_code != 200:
             logger.error(f"API request failed: {response.status_code}")
             return {}
@@ -59,4 +89,15 @@ class Medicine_Extractor:
             "dosage": result.get("dosage_and_administration", []),
         }
         return profile
-    
+    def build_faiss_index(self, texts: list[str], ids: list[str], index_path: str = "medicines.ann") -> None:
+        """
+        Build and save a FAISS index from a list of texts and their IDs.
+        Each text is chunked and embedded; embeddings are averaged per medicine.
+        """
+        vectors = []
+        for text in texts:
+            chunks = self.embed_chunks(text)
+            avg_embedding = np.mean(chunks, axis=0)
+            vectors.append(avg_embedding.astype("float32"))
+
+        
