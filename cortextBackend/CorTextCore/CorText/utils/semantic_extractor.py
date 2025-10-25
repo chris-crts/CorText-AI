@@ -89,6 +89,7 @@ class Medicine_Extractor:
             "dosage": result.get("dosage_and_administration", []),
         }
         return profile
+    
     def build_faiss_index(self, texts: list[str], ids: list[str], index_path: str = "medicines.ann") -> None:
         """
         Build and save a FAISS index from a list of texts and their IDs.
@@ -100,4 +101,18 @@ class Medicine_Extractor:
             avg_embedding = np.mean(chunks, axis=0)
             vectors.append(avg_embedding.astype("float32"))
 
-        
+        # Create FAISS index
+        dim = self.vector_dim
+        index = faiss.IndexFlatL2(dim)
+        index.add(np.array(vectors))
+
+        # Save index
+        faiss.write_index(index, index_path)
+        logger.info(f"✅ FAISS index saved to {index_path}")
+
+        # Optionally save ID mapping
+        with open(index_path.replace(".ann", ".ids.txt"), "w") as f:
+            for id_ in ids:
+                f.write(id_ + "\n")
+
+    
