@@ -278,4 +278,56 @@ def get_user_profile(request):
 
 
 
+# core/views.py
 
+from django.http import JsonResponse
+from CorText.models import Medicine
+from CorText.utils.semantic_extractor import Medicine_Extractor
+
+def fetch_medicine_profile(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST requests allowed"}, status=405)
+
+    drug_name = request.POST.get("drug_name")
+    if not drug_name:
+        return JsonResponse({"error": "Missing drug_name"}, status=400)
+
+    extractor = Medicine_Extractor()
+    profile = extractor.get_medicine_profile(drug_name)
+
+    if not profile:
+        return JsonResponse({"error": "No profile found"}, status=404)
+
+    return JsonResponse({
+        "message": f"✅ Profile fetched for {drug_name}",
+        "profile": profile
+    })
+
+def save_medicine_profile(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Only POST requests allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    drug_name = data.get("name")
+    if not drug_name:
+        return JsonResponse({"error": "Missing medicine name"}, status=400)
+
+    med = Medicine.objects.create(
+        name=drug_name,
+        brand_name=data.get("brand_name", []),
+        generic_name=data.get("generic_name", []),
+        active_ingredient=data.get("active_ingredient", []),
+        indications=" ".join(data.get("indications", [])),
+        warnings=" ".join(data.get("warnings", [])),
+        dosage=" ".join(data.get("dosage", [])),
+        source="openFDA"
+    )
+
+    return JsonResponse({
+        "message": f"✅ {drug_name} saved successfully",
+        "medicine_id": med.id
+    })

@@ -21,4 +21,6 @@ urlpatterns = [
     path('api/list-manual-admins/', views.list_manual_admins, name='list_manual_admins'),
     path('api/create-manual-admin/', views.create_manual_admin, name='create_manual_admin'),
     
+    
+    
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
