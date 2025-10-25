@@ -102,7 +102,7 @@ const styles = {
   errorAlert: {
     marginTop: '16px',
     backgroundColor: '#fef2f2',
-    border: '1px solid '#fecaca',
+    border: "1px solid #fecaca",
     color: '#991b1b',
     padding: '12px 16px',
     borderRadius: '8px',
