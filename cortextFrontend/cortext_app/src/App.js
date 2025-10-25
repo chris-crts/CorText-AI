@@ -12,6 +12,8 @@ import AdminDash from './cortextPages/admin/adminDash';
 
 import AppLayout from './cortextPages/AppLayout';
 
+import MedicineFetcher from './cortextPages/admin/medicinePage';
+
 export default App;
 
 function App() {
@@ -28,6 +30,8 @@ function App() {
 
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route path="/adminDash" element={<AdminDash />} />
+
+          <Route path="/medicinePage" element={<MedicineFetcher />} />
         </Route>
       </Routes>
     </Router>

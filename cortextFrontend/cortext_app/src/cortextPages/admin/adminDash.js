@@ -308,6 +308,9 @@ export default function AdminDash() {
         <button style={LogoutButtonStyle} onClick={handleLogout}>
           🚪 Logout
         </button>
+        <button style={SavebuttonStyle} onClick={() => window.location.href = '/medicinePage'}>
+          Go to Medicine Page
+        </button>
       </motion.div>
     </motion.div>
   );
