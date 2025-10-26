@@ -23,4 +23,16 @@ urlpatterns = [
     
     path('api/save_all_medicines/', views.save_all_medicines, name='save_all_medicines'), 
     
+    # Add single medicine
+    path('api/medicines/add/', views.add_medicine, name='add_medicine'),
+    
+    # Batch add medicines
+    path('api/medicines/batch-add/', views.batch_add_medicines, name='batch_add_medicines'),
+    
+    # Get database statistics
+    path('api/medicines/stats/', views.get_database_stats, name='database_stats'),
+    
+    # List all medicines (paginated)
+    path('api/medicines/list/', views.list_medicines, name='list_medicines'),
+    
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

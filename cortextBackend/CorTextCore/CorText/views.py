@@ -338,3 +338,254 @@ def save_all_medicines(request):
         "total": len(medicines_data),
         "errors": errors if errors else None
     })
+
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from CorText.utils.semantic_extractor import Medicine_Extractor
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def add_medicine(request):
+    """
+    API endpoint to add a single medicine to the vector database.
+    
+    POST /api/medicines/add/
+    
+    Request Body:
+    {
+        "name": "Aspirin",
+        "brand_name": ["Bayer Aspirin", "Ecotrin"],
+        "generic_name": ["aspirin"],
+        "active_ingredient": ["aspirin 325mg"],
+        "indications": ["pain relief", "fever reduction"],
+        "warnings": ["GI bleeding risk"],
+        "dosage": ["325mg orally every 4-6 hours"]
+    }
+    
+    Response:
+    {
+        "success": true,
+        "message": "Medicine added successfully",
+        "data": {
+            "id": "med_123",
+            "name": "Aspirin",
+            ...
+        }
+    }
+    """
+    try:
+        # Parse request body
+        data = json.loads(request.body)
+        
+        # Validate required field
+        if not data.get("name"):
+            return JsonResponse({
+                "success": False,
+                "error": "Field 'name' is required"
+            }, status=400)
+        
+        # Prepare medicine data
+        medicine_data = {
+            "name": data.get("name"),
+            "brand_name": data.get("brand_name", []),
+            "generic_name": data.get("generic_name", []),
+            "active_ingredient": data.get("active_ingredient", []),
+            "indications": data.get("indications", []),
+            "warnings": data.get("warnings", []),
+            "dosage": data.get("dosage", []),
+        }
+        
+        # Optional fields
+        if data.get("manufacturer"):
+            medicine_data["manufacturer"] = data.get("manufacturer")
+        if data.get("rxcui"):
+            medicine_data["rxcui"] = data.get("rxcui")
+        if data.get("normalized_name"):
+            medicine_data["normalized_name"] = data.get("normalized_name")
+        
+        # Initialize extractor and add medicine
+        extractor = Medicine_Extractor()
+        added_medicine = extractor.add_single_medicine(
+            medicine_data=medicine_data,
+            ann_path="medicines.ann",
+            json_path="medicines_metadata.json",
+            auto_generate_id=True
+        )
+        
+        # Remove vector from response (too large)
+        response_data = {k: v for k, v in added_medicine.items() if k != "vector"}
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Medicine '{added_medicine['name']}' added successfully",
+            "data": response_data
+        }, status=201)
+        
+    except FileNotFoundError as e:
+        return JsonResponse({
+            "success": False,
+            "error": "Vector database not found. Please run 'python manage.py embed_medicines' first."
+        }, status=404)
+        
+    except json.JSONDecodeError:
+        return JsonResponse({
+            "success": False,
+            "error": "Invalid JSON in request body"
+        }, status=400)
+        
+    except Exception as e:
+        logger.error(f"Error adding medicine: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def batch_add_medicines(request):
+    """
+    API endpoint to add multiple medicines in batch.
+    
+    POST /api/medicines/batch-add/
+    
+    Request Body:
+    {
+        "medicines": [
+            {
+                "name": "Aspirin",
+                "brand_name": ["Bayer"],
+                ...
+            },
+            {
+                "name": "Ibuprofen",
+                "brand_name": ["Advil"],
+                ...
+            }
+        ]
+    }
+    """
+    try:
+        data = json.loads(request.body)
+        medicines_list = data.get("medicines", [])
+        
+        if not medicines_list:
+            return JsonResponse({
+                "success": False,
+                "error": "No medicines provided"
+            }, status=400)
+        
+        extractor = Medicine_Extractor()
+        added_medicines = extractor.batch_add_medicines(
+            medicines_list=medicines_list,
+            ann_path="medicines.ann",
+            json_path="medicines_metadata.json"
+        )
+        
+        return JsonResponse({
+            "success": True,
+            "message": f"Successfully added {len(added_medicines)} medicines",
+            "data": {
+                "count": len(added_medicines),
+                "medicines": [
+                    {k: v for k, v in m.items() if k != "vector"}
+                    for m in added_medicines
+                ]
+            }
+        }, status=201)
+        
+    except Exception as e:
+        logger.error(f"Error batch adding medicines: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def get_database_stats(request):
+    """
+    Get statistics about the vector database.
+    
+    GET /api/medicines/stats/
+    """
+    try:
+        with open("medicines_metadata.json", "r") as f:
+            json_data = json.load(f)
+        
+        metadata = json_data.get("metadata", {})
+        
+        return JsonResponse({
+            "success": True,
+            "data": {
+                "total_medicines": metadata.get("total_medicines", 0),
+                "vector_dimension": metadata.get("vector_dimension", 768),
+                "normalized_count": metadata.get("normalized_count", 0),
+                "enriched_count": metadata.get("enriched_count", 0),
+                "model": metadata.get("model", "dmis-lab/biobert-base-cased-v1.1")
+            }
+        })
+        
+    except FileNotFoundError:
+        return JsonResponse({
+            "success": False,
+            "error": "Database not found"
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def list_medicines(request):
+    """
+    List all medicines in the database (paginated).
+    
+    GET /api/medicines/list/?page=1&per_page=20
+    """
+    try:
+        with open("medicines_metadata.json", "r") as f:
+            json_data = json.load(f)
+        
+        medicines = json_data.get("medicines", [])
+        
+        # Pagination
+        page = int(request.GET.get("page", 1))
+        per_page = int(request.GET.get("per_page", 20))
+        start = (page - 1) * per_page
+        end = start + per_page
+        
+        paginated_medicines = medicines[start:end]
+        
+        # Remove vectors from response
+        response_medicines = [
+            {k: v for k, v in m.items() if k != "vector"}
+            for m in paginated_medicines
+        ]
+        
+        return JsonResponse({
+            "success": True,
+            "data": {
+                "medicines": response_medicines,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": len(medicines),
+                    "total_pages": (len(medicines) + per_page - 1) // per_page
+                }
+            }
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)

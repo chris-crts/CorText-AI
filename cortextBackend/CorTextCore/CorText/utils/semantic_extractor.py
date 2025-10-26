@@ -1,89 +1,77 @@
-import requests
-import torch
-import faiss
-import numpy as np
-from functools import lru_cache
-from transformers import AutoTokenizer, AutoModel
-import logging
 import json
-from typing import List, Dict, Tuple
-
-logger = logging.getLogger(__name__)
-
-import requests
-import torch
-import faiss
-import numpy as np
-from functools import lru_cache
-from transformers import AutoTokenizer, AutoModel
 import logging
-import json
-from typing import List, Dict, Tuple
 import time
+from typing import List, Dict, Tuple, Optional
+
+import numpy as np
+import faiss
+import requests
+import torch
+from transformers import AutoTokenizer, AutoModel
 
 logger = logging.getLogger(__name__)
+
 
 class Medicine_Extractor:
     def __init__(self, modelName="dmis-lab/biobert-base-cased-v1.1"):
         self.tokenizer = AutoTokenizer.from_pretrained(modelName)
         self.model = AutoModel.from_pretrained(modelName)
         self.vector_dim = self.model.config.hidden_size
+        logger.info(f"✅ BioBERT model loaded (dimension: {self.vector_dim})")
 
-    @lru_cache(maxsize=1024)
-    def embed(self, text: str) -> np.ndarray:
-        """Embed a single text (truncated at 512 tokens)."""
+    def embed_text(self, text: str) -> np.ndarray:
+        """
+        Embed a single text using BioBERT.
+        For long texts, splits into chunks and averages embeddings.
+        """
         if not text or len(text.strip()) < 3:
-            logger.warning("Empty or short text passed to embed()")
-            return np.zeros(self.vector_dim)
+            logger.warning("Empty or short text passed to embed_text()")
+            return np.zeros(self.vector_dim, dtype="float32")
 
-        inputs = self.tokenizer(
-            text,
-            return_tensors="pt",
-            truncation=True,
-            padding=True,
-            max_length=512
-        )
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            embeddings = outputs.last_hidden_state.mean(dim=1)
-        return embeddings.squeeze().numpy()
-
-    def embed_chunks(self, text: str, chunk_size: int = 512, overlap: int = 50) -> list:
-        """
-        Split long text into chunks of up to `chunk_size` tokens,
-        with optional overlap, and return embeddings for each chunk.
-        """
+        # Tokenize and split into chunks if necessary
         tokens = self.tokenizer.tokenize(text)
+        max_length = 512
+        chunk_size = 450  # Leave room for special tokens
+        
+        if len(tokens) <= chunk_size:
+            # Single chunk
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=max_length
+            )
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                embedding = outputs.last_hidden_state.mean(dim=1)
+            return embedding.squeeze().numpy().astype("float32")
+        
+        # Multiple chunks - split and average
         embeddings = []
-
-        for i in range(0, len(tokens), chunk_size - overlap):
+        for i in range(0, len(tokens), chunk_size):
             chunk_tokens = tokens[i:i + chunk_size]
-            if not chunk_tokens:
-                continue
             chunk_text = self.tokenizer.convert_tokens_to_string(chunk_tokens)
-
+            
             inputs = self.tokenizer(
                 chunk_text,
                 return_tensors="pt",
                 truncation=True,
                 padding=True,
-                max_length=chunk_size
+                max_length=max_length
             )
             with torch.no_grad():
                 outputs = self.model(**inputs)
                 chunk_embedding = outputs.last_hidden_state.mean(dim=1)
             embeddings.append(chunk_embedding.squeeze().numpy())
+        
+        # Average all chunk embeddings
+        avg_embedding = np.mean(embeddings, axis=0).astype("float32")
+        return avg_embedding
 
-        return embeddings
-
-    def warmup(self) -> None:
-        """Trigger model loading during startup."""
-        _ = self.embed("warmup")
-        logger.info("✅ Embedding model warmed up.")
-    
-    def fetch_all_medicines_from_api(self, limit: int = 900) -> List[Dict]:
+    def fetch_medicines_from_openfda(self, limit: int = 100) -> List[Dict]:
         """
-        Fetch all medicines from openFDA API.
+        Fetch medicines from openFDA API.
         Returns a list of medicine dictionaries with structured data.
         """
         url = f"https://api.fda.gov/drug/label.json?limit={limit}"
@@ -123,7 +111,7 @@ class Medicine_Extractor:
         except requests.RequestException as e:
             logger.error(f"❌ Failed to fetch medicines from API: {e}")
             return []
-    
+
     def normalize_with_rxnorm(self, medicines: List[Dict]) -> List[Dict]:
         """
         Normalize medicine names using RxNorm API.
@@ -133,7 +121,7 @@ class Medicine_Extractor:
         normalized_medicines = []
         
         for i, medicine in enumerate(medicines):
-            if i % 50 == 0:
+            if i % 10 == 0 and i > 0:
                 logger.info(f"Normalized {i}/{len(medicines)} medicines...")
             
             try:
@@ -162,16 +150,19 @@ class Medicine_Extractor:
                             medicine["rxcui"] = rxcui
                             medicine["normalized_name"] = normalized_name
                             medicine["normalized"] = True
-                            logger.debug(f"✅ Normalized: {medicine['name']} → {normalized_name} (RxCUI: {rxcui})")
                         else:
+                            medicine["normalized_name"] = medicine["name"]
                             medicine["normalized"] = False
                     else:
+                        medicine["normalized_name"] = medicine["name"]
                         medicine["normalized"] = False
                 else:
+                    medicine["normalized_name"] = medicine["name"]
                     medicine["normalized"] = False
                     
             except Exception as e:
                 logger.warning(f"⚠️ RxNorm lookup failed for {medicine['name']}: {e}")
+                medicine["normalized_name"] = medicine["name"]
                 medicine["normalized"] = False
             
             normalized_medicines.append(medicine)
@@ -180,22 +171,18 @@ class Medicine_Extractor:
             time.sleep(0.1)
         
         normalized_count = sum(1 for m in normalized_medicines if m.get("normalized"))
-        logger.info(f"✅ RxNorm normalization complete: {normalized_count}/{len(medicines)} medicines normalized")
+        logger.info(f"✅ RxNorm normalization complete: {normalized_count}/{len(medicines)} normalized")
         return normalized_medicines
-    
-    def enrich_with_dailymed(self, medicines: List[Dict], enable_enrichment: bool = True) -> List[Dict]:
+
+    def enrich_with_dailymed(self, medicines: List[Dict]) -> List[Dict]:
         """
         Enrich medicines with DailyMed data (manufacturer, packaging).
         """
-        if not enable_enrichment:
-            logger.info("⏭️ Skipping DailyMed enrichment (disabled)")
-            return medicines
-        
         logger.info(f"📚 Starting DailyMed enrichment for {len(medicines)} medicines...")
         enriched_medicines = []
         
         for i, medicine in enumerate(medicines):
-            if i % 50 == 0:
+            if i % 10 == 0 and i > 0:
                 logger.info(f"Enriched {i}/{len(medicines)} medicines...")
             
             try:
@@ -226,7 +213,6 @@ class Medicine_Extractor:
                                 medicine["manufacturer"] = detail_data.get("data", [{}])[0].get("labeler", "")
                                 medicine["package_info"] = detail_data.get("data", [{}])[0].get("packaging", "")
                                 medicine["enriched"] = True
-                                logger.debug(f"✅ Enriched: {medicine['name']} with DailyMed data")
                             else:
                                 medicine["enriched"] = False
                         else:
@@ -246,13 +232,12 @@ class Medicine_Extractor:
             time.sleep(0.1)
         
         enriched_count = sum(1 for m in enriched_medicines if m.get("enriched"))
-        logger.info(f"✅ DailyMed enrichment complete: {enriched_count}/{len(medicines)} medicines enriched")
+        logger.info(f"✅ DailyMed enrichment complete: {enriched_count}/{len(medicines)} enriched")
         return enriched_medicines
-    
+
     def medicine_to_text(self, medicine: Dict) -> str:
         """
         Convert a medicine dictionary to a single text string for embedding.
-        Uses normalized name if available.
         """
         name = medicine.get("normalized_name", medicine.get("name", ""))
         parts = [
@@ -270,151 +255,445 @@ class Medicine_Extractor:
             parts.append(f"Manufacturer: {medicine['manufacturer']}")
         
         return " ".join(parts)
-    
-    def embed_and_index_medicines(
+
+    def embed_medicines(self, medicines: List[Dict], include_vectors_in_json: bool = True) -> List[Dict]:
+        """
+        Embed all medicines and add the vector to each medicine dictionary.
+        
+        Args:
+            medicines: List of medicine dictionaries
+            include_vectors_in_json: If True, add 'vector' field to each medicine (for JSON storage)
+        
+        Returns:
+            List of medicines with vectors added (if include_vectors_in_json=True)
+        """
+        logger.info(f"🧠 Embedding {len(medicines)} medicines with BioBERT...")
+        
+        vectors = []
+        
+        for i, medicine in enumerate(medicines):
+            if i % 10 == 0 and i > 0:
+                logger.info(f"Embedded {i}/{len(medicines)} medicines...")
+            
+            # Convert medicine to text
+            text = self.medicine_to_text(medicine)
+            
+            # Generate embedding
+            vector = self.embed_text(text)
+            vectors.append(vector)
+            
+            # Optionally add vector to medicine dictionary for JSON storage
+            if include_vectors_in_json:
+                medicine["vector"] = vector.tolist()
+                medicine["vector_dim"] = len(vector)
+        
+        logger.info(f"✅ Successfully embedded {len(medicines)} medicines")
+        
+        # Store vectors as instance variable for FAISS indexing
+        self._vectors = np.array(vectors, dtype="float32")
+        
+        return medicines
+
+    def build_faiss_index(self, vectors: Optional[np.ndarray] = None) -> faiss.IndexFlatL2:
+        """
+        Build a FAISS index from vectors.
+        
+        Args:
+            vectors: Optional numpy array of vectors. If None, uses self._vectors from embed_medicines()
+        
+        Returns:
+            FAISS index
+        """
+        if vectors is None:
+            if not hasattr(self, '_vectors'):
+                raise ValueError("No vectors found. Run embed_medicines() first or provide vectors.")
+            vectors = self._vectors
+        
+        logger.info(f"🔧 Building FAISS index with {len(vectors)} vectors...")
+        
+        # Create FAISS index (L2 distance)
+        index = faiss.IndexFlatL2(self.vector_dim)
+        index.add(vectors)
+        
+        logger.info(f"✅ FAISS index built with {index.ntotal} vectors")
+        return index
+
+    def save_dual_format(
         self,
         medicines: List[Dict],
-        index_path: str = "medicines.ann",
-        metadata_path: str = "medicines_metadata.json"
+        ann_path: str = "medicines.ann",
+        json_path: str = "medicines_metadata.json",
+        include_vectors_in_json: bool = True
+    ) -> None:
+        """
+        Save vector database in dual format:
+        1. .ann file (FAISS index) for fast similarity search
+        2. .json file (metadata) for rich profile access
+        
+        Args:
+            medicines: List of medicine dictionaries (must have 'vector' field if using cached vectors)
+            ann_path: Path to save FAISS index
+            json_path: Path to save metadata JSON
+            include_vectors_in_json: Whether to include vectors in JSON (for redundancy/debugging)
+        """
+        logger.info("💾 Saving vector database in dual format (.ann + .json)...")
+        
+        # Build FAISS index
+        if hasattr(self, '_vectors'):
+            # Use cached vectors from embed_medicines()
+            index = self.build_faiss_index(self._vectors)
+        else:
+            # Extract vectors from medicines
+            vectors = np.array([m['vector'] for m in medicines], dtype="float32")
+            index = self.build_faiss_index(vectors)
+        
+        # Save FAISS index to .ann file
+        faiss.write_index(index, ann_path)
+        logger.info(f"✅ FAISS index saved to {ann_path}")
+        
+        # Prepare JSON metadata
+        medicines_for_json = []
+        for medicine in medicines:
+            med_copy = medicine.copy()
+            
+            # Optionally remove vectors from JSON to save space
+            if not include_vectors_in_json and 'vector' in med_copy:
+                del med_copy['vector']
+                # Keep vector_dim for reference
+                if 'vector_dim' not in med_copy:
+                    med_copy['vector_dim'] = self.vector_dim
+            
+            medicines_for_json.append(med_copy)
+        
+        # Add metadata header
+        json_data = {
+            "metadata": {
+                "total_medicines": len(medicines),
+                "vector_dimension": self.vector_dim,
+                "model": "dmis-lab/biobert-base-cased-v1.1",
+                "normalized_count": sum(1 for m in medicines if m.get("normalized")),
+                "enriched_count": sum(1 for m in medicines if m.get("enriched")),
+                "ann_file": ann_path,
+                "vectors_in_json": include_vectors_in_json,
+                "synchronization": "Medicine IDs align with FAISS index positions"
+            },
+            "medicines": medicines_for_json
+        }
+        
+        # Save JSON metadata
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        
+        logger.info(f"✅ Metadata saved to {json_path}")
+        logger.info(f"✅ Dual-format vector database complete:")
+        logger.info(f"   - FAISS index: {ann_path} (for fast search)")
+        logger.info(f"   - JSON metadata: {json_path} (for rich profiles)")
+
+    def load_dual_format(
+        self,
+        ann_path: str = "medicines.ann",
+        json_path: str = "medicines_metadata.json"
     ) -> Tuple[faiss.IndexFlatL2, List[Dict]]:
         """
-        Embed medicines with BioBERT and build FAISS index.
-        This is the final step after normalization and enrichment.
+        Load vector database from dual format.
+        
+        Returns:
+            Tuple of (FAISS index, medicines list)
         """
-        if not medicines:
-            logger.error("No medicines to embed")
-            return None, []
+        logger.info("📂 Loading vector database from dual format...")
         
-        logger.info(f"🧠 Embedding {len(medicines)} medicines with BioBERT...")
-        vectors = []
+        # Load FAISS index
+        index = faiss.read_index(ann_path)
+        logger.info(f"✅ FAISS index loaded from {ann_path} ({index.ntotal} vectors)")
         
-        for i, medicine in enumerate(medicines):
-            if i % 50 == 0:
-                logger.info(f"Embedded {i}/{len(medicines)} medicines...")
-            
-            text = self.medicine_to_text(medicine)
-            chunks = self.embed_chunks(text)
-            
-            if chunks:
-                avg_embedding = np.mean(chunks, axis=0).astype("float32")
-            else:
-                avg_embedding = np.zeros(self.vector_dim, dtype="float32")
-            
-            vectors.append(avg_embedding)
+        # Load JSON metadata
+        with open(json_path, "r") as f:
+            json_data = json.load(f)
         
-        # Create FAISS index
-        logger.info("🔧 Building FAISS index...")
-        vectors_array = np.array(vectors)
-        index = faiss.IndexFlatL2(self.vector_dim)
-        index.add(vectors_array)
+        medicines = json_data.get("medicines", [])
+        metadata = json_data.get("metadata", {})
         
-        # Save index
-        faiss.write_index(index, index_path)
-        logger.info(f"✅ FAISS index saved to {index_path}")
-        
-        # Save metadata
-        with open(metadata_path, "w") as f:
-            json.dump(medicines, f, indent=2)
-        logger.info(f"✅ Medicine metadata saved to {metadata_path}")
+        logger.info(f"✅ Metadata loaded from {json_path} ({len(medicines)} medicines)")
+        logger.info(f"   Vector dimension: {metadata.get('vector_dimension')}")
+        logger.info(f"   Normalized: {metadata.get('normalized_count')}/{metadata.get('total_medicines')}")
+        logger.info(f"   Enriched: {metadata.get('enriched_count')}/{metadata.get('total_medicines')}")
         
         return index, medicines
-    
-    def embed_all_medicines_from_api(
-        self, 
-        limit: int = 999,
-        index_path: str = "medicines.ann",
-        metadata_path: str = "medicines_metadata.json"
-    ) -> Tuple[faiss.IndexFlatL2, List[Dict]]:
-        """
-        Legacy method: Fetch all medicines from openFDA API, embed them, and build a FAISS index.
-        Use the new pipeline methods for more control.
-        """
-        medicines = self.fetch_all_medicines_from_api(limit=limit)
-        
-        if not medicines:
-            logger.error("No medicines to embed")
-            return None, []
-        
-        # Convert medicines to text and embed
-        logger.info("🔄 Embedding medicines...")
-        vectors = []
-        
-        for i, medicine in enumerate(medicines):
-            if i % 50 == 0:
-                logger.info(f"Embedded {i}/{len(medicines)} medicines...")
-            
-            text = self.medicine_to_text(medicine)
-            chunks = self.embed_chunks(text)
-            
-            if chunks:
-                avg_embedding = np.mean(chunks, axis=0).astype("float32")
-            else:
-                avg_embedding = np.zeros(self.vector_dim, dtype="float32")
-            
-            vectors.append(avg_embedding)
-        
-        # Create FAISS index
-        logger.info("🔧 Building FAISS index...")
-        vectors_array = np.array(vectors)
-        index = faiss.IndexFlatL2(self.vector_dim)
-        index.add(vectors_array)
-        
-        # Save index
-        faiss.write_index(index, index_path)
-        logger.info(f"✅ FAISS index saved to {index_path}")
-        
-        # Save metadata
-        with open(metadata_path, "w") as f:
-            json.dump(medicines, f, indent=2)
-        logger.info(f"✅ Medicine metadata saved to {metadata_path}")
-        
-        return index, medicines
-        
-    def build_faiss_index(self, texts: list[str], ids: list[str], index_path: str = "medicines.ann") -> None:
-        """
-        Build and save a FAISS index from a list of texts and their IDs.
-        """
-        vectors = []
-        for text in texts:
-            chunks = self.embed_chunks(text)
-            avg_embedding = np.mean(chunks, axis=0)
-            vectors.append(avg_embedding.astype("float32"))
 
-        dim = self.vector_dim
-        index = faiss.IndexFlatL2(dim)
-        index.add(np.array(vectors))
-
-        faiss.write_index(index, index_path)
-        logger.info(f"✅ FAISS index saved to {index_path}")
-
-        with open(index_path.replace(".ann", ".ids.txt"), "w") as f:
-            for id_ in ids:
-                f.write(id_ + "\n")
-
-    def load_faiss_index(self, index_path: str = "medicines.ann") -> faiss.IndexFlatL2:
-        """Load a FAISS index from disk."""
-        index = faiss.read_index(index_path)
-        logger.info(f"📂 FAISS index loaded from {index_path}")
-        return index
-    
-    def search_similar_medicines(
-        self, 
-        query: str, 
-        index: faiss.IndexFlatL2, 
-        medicines: List[Dict], 
+    def search_with_faiss(
+        self,
+        query: str,
+        index: faiss.IndexFlatL2,
+        medicines: List[Dict],
         top_k: int = 5
-    ) -> List[Tuple[Dict, float]]:
+    ) -> List[Dict]:
         """
-        Search for similar medicines using a text query.
+        Search for similar medicines using FAISS index for fast retrieval.
+        
+        Args:
+            query: Search query text
+            index: FAISS index
+            medicines: List of medicine metadata (aligned with index positions)
+            top_k: Number of results to return
+        
+        Returns:
+            List of dictionaries with medicine data and similarity scores
         """
-        query_chunks = self.embed_chunks(query)
-        query_embedding = np.mean(query_chunks, axis=0).astype("float32").reshape(1, -1)
+        logger.info(f"🔍 Searching FAISS index for: '{query}'")
         
-        distances, indices = index.search(query_embedding, top_k)
+        # Embed the query
+        query_vector = self.embed_text(query).reshape(1, -1)
         
+        # Search FAISS index (returns distances and indices)
+        distances, indices = index.search(query_vector, top_k)
+        
+        # Convert L2 distances to similarity scores (lower distance = higher similarity)
+        # Using negative distance so higher values = better matches
         results = []
-        for idx, distance in zip(indices[0], distances[0]):
+        for dist, idx in zip(distances[0], indices[0]):
             if idx < len(medicines):
-                results.append((medicines[idx], float(distance)))
+                # Convert L2 distance to similarity score (0-1 range, higher is better)
+                # Using exponential decay: e^(-distance/scale)
+                similarity = float(np.exp(-dist / 10.0))
+                
+                results.append({
+                    "medicine": medicines[idx],
+                    "similarity": similarity,
+                    "distance": float(dist),
+                    "index": int(idx)
+                })
         
+        logger.info(f"✅ Found {len(results)} similar medicines")
         return results
+
+    def search_with_json(
+        self,
+        query: str,
+        medicines: List[Dict],
+        top_k: int = 5
+    ) -> List[Dict]:
+        """
+        Search for similar medicines using direct vector comparison (requires vectors in JSON).
+        Fallback method when FAISS is not available.
+        
+        Args:
+            query: Search query text
+            medicines: List of medicine metadata with 'vector' field
+            top_k: Number of results to return
+        
+        Returns:
+            List of dictionaries with medicine data and similarity scores
+        """
+        logger.info(f"🔍 Searching JSON vectors for: '{query}'")
+        
+        # Embed the query
+        query_vector = self.embed_text(query)
+        
+        # Calculate cosine similarity with all medicines
+        similarities = []
+        for i, medicine in enumerate(medicines):
+            if "vector" not in medicine:
+                logger.warning(f"Medicine {medicine.get('name')} missing vector field")
+                continue
+            
+            med_vector = np.array(medicine["vector"], dtype="float32")
+            
+            # Cosine similarity
+            similarity = np.dot(query_vector, med_vector) / (
+                np.linalg.norm(query_vector) * np.linalg.norm(med_vector)
+            )
+            
+            similarities.append({
+                "medicine": medicine,
+                "similarity": float(similarity),
+                "index": i
+            })
+        
+        # Sort by similarity (descending)
+        similarities.sort(key=lambda x: x["similarity"], reverse=True)
+        
+        # Return top_k results
+        top_results = similarities[:top_k]
+        
+        logger.info(f"✅ Found {len(top_results)} similar medicines")
+        return top_results
+
+    def add_single_medicine(
+        self,
+        medicine_data: Dict,
+        ann_path: str = "medicines.ann",
+        json_path: str = "medicines_metadata.json",
+        auto_generate_id: bool = True
+    ) -> Dict:
+        """
+        Add a single medicine to existing vector database (both .ann and .json files).
+        This is an incremental operation that doesn't require rebuilding the entire database.
+        
+        Args:
+            medicine_data: Dictionary with medicine information
+                Required fields: name
+                Optional fields: brand_name, generic_name, active_ingredient, 
+                                indications, warnings, dosage, etc.
+            ann_path: Path to FAISS index file
+            json_path: Path to JSON metadata file
+            auto_generate_id: If True, automatically generates medicine ID
+        
+        Returns:
+            Dictionary with added medicine data including vector
+        
+        Raises:
+            FileNotFoundError: If database files don't exist
+            ValueError: If medicine_data is invalid
+        """
+        logger.info(f"➕ Adding new medicine: {medicine_data.get('name', 'Unknown')}")
+        
+        # Validate input
+        if not medicine_data.get("name"):
+            raise ValueError("Medicine 'name' is required")
+        
+        # Load existing database
+        try:
+            index = faiss.read_index(ann_path)
+            with open(json_path, "r") as f:
+                json_data = json.load(f)
+            medicines = json_data.get("medicines", [])
+            metadata = json_data.get("metadata", {})
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Database files not found. Please run 'python manage.py embed_medicines' first."
+            )
+        
+        # Auto-generate ID if needed
+        if auto_generate_id or not medicine_data.get("id"):
+            next_idx = len(medicines)
+            medicine_data["id"] = f"med_{next_idx}"
+        
+        # Ensure all required fields have default values
+        medicine_data.setdefault("brand_name", [])
+        medicine_data.setdefault("generic_name", [])
+        medicine_data.setdefault("active_ingredient", [])
+        medicine_data.setdefault("indications", [])
+        medicine_data.setdefault("warnings", [])
+        medicine_data.setdefault("dosage", [])
+        medicine_data.setdefault("normalized_name", medicine_data["name"])
+        medicine_data.setdefault("normalized", False)
+        medicine_data.setdefault("enriched", False)
+        
+        # Convert medicine to text and embed
+        text = self.medicine_to_text(medicine_data)
+        vector = self.embed_text(text)
+        
+        # Add vector to medicine data
+        medicine_data["vector"] = vector.tolist()
+        medicine_data["vector_dim"] = len(vector)
+        
+        # Add vector to FAISS index
+        vector_array = vector.reshape(1, -1).astype("float32")
+        index.add(vector_array)
+        
+        # Add medicine to JSON data
+        medicines.append(medicine_data)
+        
+        # Update metadata
+        metadata["total_medicines"] = len(medicines)
+        if medicine_data.get("normalized"):
+            metadata["normalized_count"] = metadata.get("normalized_count", 0) + 1
+        if medicine_data.get("enriched"):
+            metadata["enriched_count"] = metadata.get("enriched_count", 0) + 1
+        
+        # Save updated FAISS index
+        faiss.write_index(index, ann_path)
+        logger.info(f"✅ Updated FAISS index: {ann_path}")
+        
+        # Save updated JSON
+        json_data["medicines"] = medicines
+        json_data["metadata"] = metadata
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        logger.info(f"✅ Updated JSON metadata: {json_path}")
+        
+        logger.info(f"✅ Successfully added medicine: {medicine_data['name']} (ID: {medicine_data['id']})")
+        logger.info(f"   Total medicines in database: {len(medicines)}")
+        
+        return medicine_data
+
+    def batch_add_medicines(
+        self,
+        medicines_list: List[Dict],
+        ann_path: str = "medicines.ann",
+        json_path: str = "medicines_metadata.json"
+    ) -> List[Dict]:
+        """
+        Add multiple medicines to existing vector database in a batch operation.
+        More efficient than calling add_single_medicine() multiple times.
+        
+        Args:
+            medicines_list: List of medicine dictionaries
+            ann_path: Path to FAISS index file
+            json_path: Path to JSON metadata file
+        
+        Returns:
+            List of added medicines with vectors
+        """
+        logger.info(f"➕ Batch adding {len(medicines_list)} medicines...")
+        
+        # Load existing database
+        index = faiss.read_index(ann_path)
+        with open(json_path, "r") as f:
+            json_data = json.load(f)
+        medicines = json_data.get("medicines", [])
+        metadata = json_data.get("metadata", {})
+        
+        # Process all new medicines
+        new_vectors = []
+        next_idx = len(medicines)
+        
+        for i, medicine_data in enumerate(medicines_list):
+            # Validate
+            if not medicine_data.get("name"):
+                logger.warning(f"Skipping medicine at index {i}: missing 'name' field")
+                continue
+            
+            # Auto-generate ID
+            if not medicine_data.get("id"):
+                medicine_data["id"] = f"med_{next_idx}"
+                next_idx += 1
+            
+            # Set defaults
+            medicine_data.setdefault("brand_name", [])
+            medicine_data.setdefault("generic_name", [])
+            medicine_data.setdefault("active_ingredient", [])
+            medicine_data.setdefault("indications", [])
+            medicine_data.setdefault("warnings", [])
+            medicine_data.setdefault("dosage", [])
+            medicine_data.setdefault("normalized_name", medicine_data["name"])
+            medicine_data.setdefault("normalized", False)
+            medicine_data.setdefault("enriched", False)
+            
+            # Embed
+            text = self.medicine_to_text(medicine_data)
+            vector = self.embed_text(text)
+            
+            medicine_data["vector"] = vector.tolist()
+            medicine_data["vector_dim"] = len(vector)
+            
+            new_vectors.append(vector)
+            medicines.append(medicine_data)
+        
+        # Batch add vectors to FAISS
+        if new_vectors:
+            vectors_array = np.array(new_vectors, dtype="float32")
+            index.add(vectors_array)
+        
+        # Update metadata
+        metadata["total_medicines"] = len(medicines)
+        
+        # Save
+        faiss.write_index(index, ann_path)
+        json_data["medicines"] = medicines
+        json_data["metadata"] = metadata
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        
+        logger.info(f"✅ Batch added {len(new_vectors)} medicines to database")
+        return medicines_list
