@@ -21,7 +21,6 @@ urlpatterns = [
     path('api/list-manual-admins/', views.list_manual_admins, name='list_manual_admins'),
     path('api/create-manual-admin/', views.create_manual_admin, name='create_manual_admin'),
     
-    path("fetch-profile/", views.fetch_medicine_profile, name="fetch_profile"),
-    path("save-profile/", views.save_medicine_profile, name="save_profile"),
+    path('api/save_all_medicines/', views.save_all_medicines, name='save_all_medicines'), 
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

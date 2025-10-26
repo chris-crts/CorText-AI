@@ -283,27 +283,10 @@ def get_user_profile(request):
 from django.http import JsonResponse
 from CorText.models import Medicine
 from CorText.utils.semantic_extractor import Medicine_Extractor
+import json
 
-def fetch_medicine_profile(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Only POST requests allowed"}, status=405)
-
-    drug_name = request.POST.get("drug_name")
-    if not drug_name:
-        return JsonResponse({"error": "Missing drug_name"}, status=400)
-
-    extractor = Medicine_Extractor()
-    profile = extractor.get_medicine_profile(drug_name)
-
-    if not profile:
-        return JsonResponse({"error": "No profile found"}, status=404)
-
-    return JsonResponse({
-        "message": f"✅ Profile fetched for {drug_name}",
-        "profile": profile
-    })
-
-def save_medicine_profile(request):
+def save_all_medicines(request):
+    """Save multiple medicines to the database in bulk"""
     if request.method != "POST":
         return JsonResponse({"error": "Only POST requests allowed"}, status=405)
 
@@ -312,22 +295,46 @@ def save_medicine_profile(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    drug_name = data.get("name")
-    if not drug_name:
-        return JsonResponse({"error": "Missing medicine name"}, status=400)
+    medicines_data = data.get("medicines", [])
+    if not medicines_data:
+        return JsonResponse({"error": "No medicines provided"}, status=400)
 
-    med = Medicine.objects.create(
-        name=drug_name,
-        brand_name=data.get("brand_name", []),
-        generic_name=data.get("generic_name", []),
-        active_ingredient=data.get("active_ingredient", []),
-        indications=" ".join(data.get("indications", [])),
-        warnings=" ".join(data.get("warnings", [])),
-        dosage=" ".join(data.get("dosage", [])),
-        source="openFDA"
-    )
+    saved_count = 0
+    skipped_count = 0
+    errors = []
+
+    for medicine_data in medicines_data:
+        try:
+            drug_name = medicine_data.get("name")
+            if not drug_name:
+                errors.append("Medicine missing name field")
+                continue
+
+            # Check if medicine already exists
+            if Medicine.objects.filter(name=drug_name).exists():
+                skipped_count += 1
+                continue
+
+            # Create new medicine
+            Medicine.objects.create(
+                name=drug_name,
+                brand_name=medicine_data.get("brand_name", []),
+                generic_name=medicine_data.get("generic_name", []),
+                active_ingredient=medicine_data.get("active_ingredient", []),
+                indications=" ".join(medicine_data.get("indications", [])),
+                warnings=" ".join(medicine_data.get("warnings", [])),
+                dosage=" ".join(medicine_data.get("dosage", [])),
+                source="openFDA"
+            )
+            saved_count += 1
+
+        except Exception as e:
+            errors.append(f"Error saving {drug_name}: {str(e)}")
 
     return JsonResponse({
-        "message": f"✅ {drug_name} saved successfully",
-        "medicine_id": med.id
+        "message": f"✅ Bulk save completed",
+        "saved": saved_count,
+        "skipped": skipped_count,
+        "total": len(medicines_data),
+        "errors": errors if errors else None
     })
