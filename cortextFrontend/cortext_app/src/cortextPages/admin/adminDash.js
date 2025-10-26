@@ -15,6 +15,30 @@ import {
   successStyle,
 } from '../../cortextPages_Styles/style';
 
+const Styles = {
+  Go_button: {
+    width: '100%',
+    padding: '0.9rem 1.5rem',
+    background: 'linear-gradient(45deg, #a8a500ff, #d49800ff)',
+    border: '2px solid rgba(0, 212, 170, 0.5)',
+    borderRadius: '12px',
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: '0.95rem',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    boxShadow: '0 4px 15px rgba(0, 212, 170, 0.3)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.5rem',
+    textDecoration: 'none',
+    marginTop: '2rem',
+  },
+}
+
 export default function AdminDash() {
   const [admins, setAdmins] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -308,8 +332,11 @@ export default function AdminDash() {
         <button style={LogoutButtonStyle} onClick={handleLogout}>
           🚪 Logout
         </button>
-        <button style={SavebuttonStyle} onClick={() => window.location.href = '/medicinePage'}>
+        <button style={Styles.Go_button} onClick={() => window.location.href = '/medicinePage'}>
           Go to Medicine Page
+        </button>
+          <button style={Styles.Go_button} onClick={() => window.location.href = '/addMedicinePage'}>
+          Add Medicine Data
         </button>
       </motion.div>
     </motion.div>

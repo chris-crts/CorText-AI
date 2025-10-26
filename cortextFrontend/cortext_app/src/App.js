@@ -14,6 +14,8 @@ import AppLayout from './cortextPages/AppLayout';
 
 import MedicineFetcher from './cortextPages/admin/medicinePage';
 
+import AddMedicineForm from './cortextPages/add_Medicine';
+
 export default App;
 
 function App() {
@@ -32,6 +34,7 @@ function App() {
           <Route path="/adminDash" element={<AdminDash />} />
 
           <Route path="/medicinePage" element={<MedicineFetcher />} />
+          <Route path="/addMedicinePage" element={<AddMedicineForm />} />
         </Route>
       </Routes>
     </Router>
