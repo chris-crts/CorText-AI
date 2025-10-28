@@ -16,6 +16,8 @@ import MedicineFetcher from './cortextPages/admin/medicinePage';
 
 import AddMedicineForm from './cortextPages/add_Medicine';
 
+import PatientRecommendation from './cortextPages/testingPage';
+
 export default App;
 
 function App() {
@@ -35,6 +37,8 @@ function App() {
 
           <Route path="/medicinePage" element={<MedicineFetcher />} />
           <Route path="/addMedicinePage" element={<AddMedicineForm />} />
+
+          <Route path="/test" element={<PatientRecommendation />} />
         </Route>
       </Routes>
     </Router>
