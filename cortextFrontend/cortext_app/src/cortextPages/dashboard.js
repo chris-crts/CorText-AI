@@ -443,6 +443,9 @@ export default function Dashboard() {
         <p style={styles.welcomeDescription}>
           Empowering healthcare professionals with intelligent medical insights and personalized treatment recommendations
         </p>
+        <button style={styles.sideButton} onClick={() => window.location.href = '/test'}>
+          Test Our Product
+        </button>
       </div>
 
       {/* Side Panel */}
