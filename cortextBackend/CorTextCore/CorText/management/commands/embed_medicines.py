@@ -136,5 +136,5 @@ class Command(BaseCommand):
         self.stdout.write(f'  └─ JSON metadata: {json_path}')
         self.stdout.write('')
         self.stdout.write('🔍 Next steps:')
-        self.stdout.write(f'  python manage.py search_medicines "pain relief" --use-faiss')
+        #self.stdout.write(f'  python manage.py search_medicines "pain relief" --use-faiss')
         self.stdout.write('='*60)
