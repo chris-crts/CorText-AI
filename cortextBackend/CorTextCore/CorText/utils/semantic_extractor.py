@@ -697,3 +697,409 @@ class Medicine_Extractor:
         
         logger.info(f"✅ Batch added {len(new_vectors)} medicines to database")
         return medicines_list
+    
+
+import json
+import logging
+import time
+from typing import List, Dict, Tuple, Optional
+from datetime import datetime
+
+import numpy as np
+import faiss
+import torch
+from transformers import AutoTokenizer, AutoModel
+
+logger = logging.getLogger(__name__)
+
+
+class PatientInfo_Extractor:
+    def __init__(self, modelName="dmis-lab/biobert-base-cased-v1.1"):
+        self.tokenizer = AutoTokenizer.from_pretrained(modelName)
+        self.model = AutoModel.from_pretrained(modelName)
+        self.vector_dim = self.model.config.hidden_size
+        logger.info(f"✅ BioBERT model loaded (dimension: {self.vector_dim})")
+
+    def embed_text(self, text: str) -> np.ndarray:
+        """
+        Embed a single text using BioBERT.
+        For long texts, splits into chunks and averages embeddings.
+        """
+        if not text or len(text.strip()) < 3:
+            logger.warning("Empty or short text passed to embed_text()")
+            return np.zeros(self.vector_dim, dtype="float32")
+
+        # Tokenize and split into chunks if necessary
+        tokens = self.tokenizer.tokenize(text)
+        max_length = 512
+        chunk_size = 450  # Leave room for special tokens
+        
+        if len(tokens) <= chunk_size:
+            # Single chunk
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=max_length
+            )
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                embedding = outputs.last_hidden_state.mean(dim=1)
+            return embedding.squeeze().numpy().astype("float32")
+        
+        # Multiple chunks - split and average
+        embeddings = []
+        for i in range(0, len(tokens), chunk_size):
+            chunk_tokens = tokens[i:i + chunk_size]
+            chunk_text = self.tokenizer.convert_tokens_to_string(chunk_tokens)
+            
+            inputs = self.tokenizer(
+                chunk_text,
+                return_tensors="pt",
+                truncation=True,
+                padding=True,
+                max_length=max_length
+            )
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                chunk_embedding = outputs.last_hidden_state.mean(dim=1)
+            embeddings.append(chunk_embedding.squeeze().numpy())
+        
+        # Average all chunk embeddings
+        avg_embedding = np.mean(embeddings, axis=0).astype("float32")
+        return avg_embedding
+
+    def patient_to_text(self, patient: Dict) -> str:
+        """
+        Convert patient dictionary to text for embedding.
+        Focuses on clinically relevant information.
+        """
+        parts = []
+        
+        # Demographics
+        if patient.get("age"):
+            parts.append(f"Age: {patient['age']} years old")
+        if patient.get("gender"):
+            parts.append(f"Gender: {patient['gender']}")
+        if patient.get("weight_kg"):
+            parts.append(f"Weight: {patient['weight_kg']} kg")
+        
+        # Chief complaint and diagnosis
+        if patient.get("chief_complaint"):
+            parts.append(f"Chief Complaint: {patient['chief_complaint']}")
+        if patient.get("diagnosis"):
+            parts.append(f"Diagnosis: {patient['diagnosis']}")
+        
+        # Symptoms
+        if patient.get("symptoms"):
+            symptoms_text = ", ".join(patient["symptoms"])
+            parts.append(f"Symptoms: {symptoms_text}")
+        
+        # Medical history
+        if patient.get("medical_history"):
+            history_text = ", ".join(patient["medical_history"])
+            parts.append(f"Medical History: {history_text}")
+        
+        # Current medications
+        if patient.get("current_medications"):
+            meds_text = "; ".join(patient["current_medications"])
+            parts.append(f"Current Medications: {meds_text}")
+        
+        # Allergies (CRITICAL)
+        if patient.get("drug_allergies"):
+            allergies_text = ", ".join(patient["drug_allergies"])
+            parts.append(f"Drug Allergies: {allergies_text}")
+        
+        # Adverse reactions
+        if patient.get("adverse_reactions"):
+            reactions_text = ", ".join(patient["adverse_reactions"])
+            parts.append(f"Adverse Reactions: {reactions_text}")
+        
+        # Renal function
+        if patient.get("renal_function"):
+            renal = patient["renal_function"]
+            if renal.get("GFR_ml_min"):
+                parts.append(f"GFR: {renal['GFR_ml_min']} ml/min")
+        
+        # Liver function
+        if patient.get("liver_function"):
+            liver = patient["liver_function"]
+            if liver.get("ALT_U_L"):
+                parts.append(f"ALT: {liver['ALT_U_L']} U/L")
+        
+        # Lifestyle factors
+        if patient.get("smoking_status"):
+            parts.append(f"Smoking Status: {patient['smoking_status']}")
+        
+        # Pregnancy
+        if patient.get("pregnancy_status") and patient["pregnancy_status"] != "Not applicable":
+            parts.append(f"Pregnancy Status: {patient['pregnancy_status']}")
+        
+        # Route preference
+        if patient.get("preferred_route"):
+            parts.append(f"Preferred Route: {patient['preferred_route']}")
+        
+        return " ".join(parts)
+
+    def embed_patient(self, patient_data: Dict) -> Dict:
+        """
+        Embed patient information and add vector to the dictionary.
+        """
+        logger.info(f"🧠 Embedding patient: {patient_data.get('name', 'Unknown')}")
+        
+        # Convert patient to text
+        text = self.patient_to_text(patient_data)
+        
+        # Generate embedding
+        vector = self.embed_text(text)
+        
+        # Add metadata
+        patient_data["embedding"] = vector.tolist()
+        patient_data["vector_dim"] = len(vector)
+        patient_data["timestamp"] = datetime.now().isoformat()
+        
+        logger.info(f"✅ Patient embedded successfully")
+        return patient_data
+
+    def save_patient(
+        self,
+        patient_data: Dict,
+        ann_path: str = "patients.ann",
+        json_path: str = "patients_metadata.json"
+    ) -> Dict:
+        """
+        Save patient to vector database (dual format).
+        """
+        try:
+            # Load existing database
+            index = faiss.read_index(ann_path)
+            with open(json_path, "r") as f:
+                json_data = json.load(f)
+            patients = json_data.get("patients", [])
+        except FileNotFoundError:
+            # Create new database
+            logger.info("Creating new patient database...")
+            index = faiss.IndexFlatL2(self.vector_dim)
+            patients = []
+            json_data = {"metadata": {}, "patients": []}
+        
+        # Auto-generate ID if needed
+        if not patient_data.get("id"):
+            next_idx = len(patients)
+            patient_data["id"] = f"patient_{next_idx:03d}"
+        
+        # Embed if not already embedded
+        if "embedding" not in patient_data:
+            patient_data = self.embed_patient(patient_data)
+        
+        # Add to FAISS index
+        vector = np.array(patient_data["embedding"], dtype="float32").reshape(1, -1)
+        index.add(vector)
+        
+        # Add to patients list
+        patients.append(patient_data)
+        
+        # Update metadata
+        json_data["metadata"] = {
+            "total_patients": len(patients),
+            "vector_dimension": self.vector_dim,
+            "model": "dmis-lab/biobert-base-cased-v1.1",
+            "last_updated": datetime.now().isoformat()
+        }
+        json_data["patients"] = patients
+        
+        # Save both files
+        faiss.write_index(index, ann_path)
+        with open(json_path, "w") as f:
+            json.dump(json_data, f, indent=2)
+        
+        logger.info(f"✅ Patient saved: {patient_data['id']}")
+        return patient_data
+
+    def check_contraindications(
+        self,
+        patient: Dict,
+        medicine: Dict
+    ) -> Tuple[bool, List[str]]:
+        """
+        Check if medicine has contraindications for patient.
+        Returns (is_safe, list_of_warnings)
+        """
+        warnings = []
+        
+        # Check allergies
+        patient_allergies = [a.lower() for a in patient.get("drug_allergies", [])]
+        medicine_ingredients = " ".join(medicine.get("active_ingredient", [])).lower()
+        medicine_name = medicine.get("name", "").lower()
+        
+        for allergy in patient_allergies:
+            if allergy in medicine_ingredients or allergy in medicine_name:
+                warnings.append(f"CRITICAL: Patient allergic to {allergy}")
+                return False, warnings
+        
+        # Check adverse reactions
+        patient_reactions = [r.lower() for r in patient.get("adverse_reactions", [])]
+        for reaction in patient_reactions:
+            if reaction in medicine_name:
+                warnings.append(f"WARNING: Patient had adverse reaction to similar medication")
+        
+        # Check current medications for interactions
+        current_meds = [m.lower() for m in patient.get("current_medications", [])]
+        medicine_warnings = " ".join(medicine.get("warnings", [])).lower()
+        
+        for current_med in current_meds:
+            # Simple keyword matching (in production, use drug interaction database)
+            if any(keyword in medicine_warnings for keyword in current_med.split()[:2]):
+                warnings.append(f"CAUTION: Possible interaction with {current_med}")
+        
+        # Check renal function
+        if patient.get("renal_function", {}).get("GFR_ml_min", 100) < 60:
+            if any(keyword in medicine_warnings for keyword in ["renal", "kidney"]):
+                warnings.append("CAUTION: Renal impairment - dosage adjustment may be needed")
+        
+        # Check pregnancy
+        if patient.get("pregnancy_status") not in [None, "Not applicable", "Not pregnant"]:
+            if any(keyword in medicine_warnings for keyword in ["pregnancy", "pregnant", "fetal"]):
+                warnings.append("WARNING: Pregnancy contraindication - consult physician")
+        
+        # Check age
+        patient_age = patient.get("age", 0)
+        if patient_age < 18 and "pediatric" not in medicine_warnings and "children" not in medicine_warnings:
+            warnings.append("CAUTION: Pediatric dosing may differ")
+        elif patient_age > 65:
+            warnings.append("CAUTION: Geriatric patient - monitor for adverse effects")
+        
+        is_safe = len([w for w in warnings if "CRITICAL" in w]) == 0
+        
+        return is_safe, warnings
+
+    def recommend_medicines(
+        self,
+        patient_data: Dict,
+        medicine_ann_path: str = "medicines.ann",
+        medicine_json_path: str = "medicines_metadata.json",
+        top_k: int = 10,
+        similarity_threshold: float = 0.75
+    ) -> List[Dict]:
+        """
+        Recommend medicines for a patient using semantic similarity and safety checks.
+        
+        Multi-pass filtering:
+        1. Cosine similarity (top-k)
+        2. Allergy check (critical)
+        3. Contraindication check
+        4. Route preference
+        5. Final ranking
+        """
+        logger.info(f"🔍 Generating medicine recommendations for patient: {patient_data.get('name')}")
+        
+        # Load medicine database
+        try:
+            med_index = faiss.read_index(medicine_ann_path)
+            with open(medicine_json_path, "r") as f:
+                med_json = json.load(f)
+            medicines = med_json.get("medicines", [])
+        except FileNotFoundError:
+            logger.error("Medicine database not found")
+            return []
+        
+        # Embed patient if not already embedded
+        if "embedding" not in patient_data:
+            patient_data = self.embed_patient(patient_data)
+        
+        # Get patient vector
+        patient_vector = np.array(patient_data["embedding"], dtype="float32").reshape(1, -1)
+        
+        # Search with FAISS (initial top-k * 2 for filtering)
+        search_k = min(top_k * 3, len(medicines))
+        distances, indices = med_index.search(patient_vector, search_k)
+        
+        # Convert L2 distances to cosine similarity
+        # Normalize vectors first
+        patient_norm = patient_vector / np.linalg.norm(patient_vector)
+        
+        recommendations = []
+        
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx >= len(medicines):
+                continue
+            
+            medicine = medicines[idx]
+            
+            # Calculate cosine similarity
+            med_vector = np.array(medicine.get("vector", []), dtype="float32")
+            if len(med_vector) == 0:
+                continue
+            
+            med_norm = med_vector / np.linalg.norm(med_vector)
+            cosine_sim = float(np.dot(patient_norm, med_norm).item())
+            
+            # Threshold filter
+            if cosine_sim < similarity_threshold:
+                continue
+            
+            # Safety checks
+            is_safe, warnings = self.check_contraindications(patient_data, medicine)
+            
+            # Create recommendation
+            recommendation = {
+                "medicine_id": medicine.get("id"),
+                "medicine_name": medicine.get("name"),
+                "similarity_score": cosine_sim,
+                "is_safe": is_safe,
+                "warnings": warnings,
+                "medicine_details": {
+                    "brand_name": medicine.get("brand_name", []),
+                    "generic_name": medicine.get("generic_name", []),
+                    "active_ingredient": medicine.get("active_ingredient", []),
+                    "indications": medicine.get("indications", []),
+                    "dosage": medicine.get("dosage", []),
+                    "warnings": medicine.get("warnings", [])
+                },
+                "confidence_level": self._calculate_confidence(cosine_sim, is_safe, warnings)
+            }
+            
+            recommendations.append(recommendation)
+        
+        # Sort by safety first, then similarity
+        recommendations.sort(key=lambda x: (x["is_safe"], x["similarity_score"]), reverse=True)
+        
+        # Apply route preference filtering
+        preferred_route = patient_data.get("preferred_route", "").lower()
+        if preferred_route:
+            route_filtered = []
+            for rec in recommendations:
+                dosage_text = " ".join(rec["medicine_details"].get("dosage", [])).lower()
+                if preferred_route in dosage_text or not dosage_text:
+                    route_filtered.append(rec)
+            
+            # If we have route matches, use them; otherwise keep all
+            if route_filtered:
+                recommendations = route_filtered
+        
+        # Return top_k
+        final_recommendations = recommendations[:top_k]
+        
+        logger.info(f"✅ Generated {len(final_recommendations)} recommendations")
+        logger.info(f"   Safe: {sum(1 for r in final_recommendations if r['is_safe'])}")
+        logger.info(f"   Avg similarity: {np.mean([r['similarity_score'] for r in final_recommendations]):.3f}")
+        
+        return final_recommendations
+
+    def _calculate_confidence(self, similarity: float, is_safe: bool, warnings: List[str]) -> str:
+        """Calculate confidence level for recommendation."""
+        if not is_safe:
+            return "NOT RECOMMENDED"
+        
+        critical_warnings = len([w for w in warnings if "CRITICAL" in w])
+        regular_warnings = len([w for w in warnings if "WARNING" in w])
+        
+        if critical_warnings > 0:
+            return "LOW"
+        elif similarity >= 0.90 and regular_warnings == 0:
+            return "HIGH"
+        elif similarity >= 0.80 and regular_warnings <= 1:
+            return "MEDIUM"
+        else:
+            return "LOW"
