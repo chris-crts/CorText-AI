@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { User, Heart, AlertTriangle, CheckCircle, TrendingUp, Clock, Database, Sparkles, Shield, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, Heart, AlertTriangle, CheckCircle, Sparkles, Shield, Activity, Brain, Pill, Zap } from 'lucide-react';
 
 export default function PatientRecommendation() {
   const [patientData, setPatientData] = useState({
@@ -28,9 +28,47 @@ export default function PatientRecommendation() {
 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [step, setStep] = useState('input'); // input, processing, results
+  const [loadingPhase, setLoadingPhase] = useState(0);
+  const [step, setStep] = useState('input');
   const [recommendations, setRecommendations] = useState(null);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [particles, setParticles] = useState([]);
+
+  useEffect(() => {
+    if (loading) {
+      setProgress(0);
+      setLoadingPhase(0);
+      
+      // Generate particles for animation
+      const newParticles = Array.from({ length: 30 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        y: Math.random() * 100,
+        size: Math.random() * 4 + 2,
+        duration: Math.random() * 3 + 2
+      }));
+      setParticles(newParticles);
+
+      const interval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 100) return 100;
+          const increment = Math.random() * 8 + 2;
+          const newProgress = prev + increment;
+          
+          // Update phase based on progress
+          if (newProgress < 20) setLoadingPhase(0);
+          else if (newProgress < 40) setLoadingPhase(1);
+          else if (newProgress < 60) setLoadingPhase(2);
+          else if (newProgress < 80) setLoadingPhase(3);
+          else setLoadingPhase(4);
+          
+          return Math.min(newProgress, 95);
+        });
+      }, 300);
+
+      return () => clearInterval(interval);
+    }
+  }, [loading]);
 
   const handleChange = (e) => {
     setPatientData({
@@ -86,7 +124,7 @@ export default function PatientRecommendation() {
         preferred_route: patientData.preferred_route
       };
 
-      const patientResponse = await fetch('/api/patients/add/', {
+      const patientResponse = await fetch('http://192.168.56.1:8000/api/patients/add/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patientPayload)
@@ -101,7 +139,7 @@ export default function PatientRecommendation() {
       setProgress(50);
 
       // Step 2: Generate recommendations
-      const recResponse = await fetch('/api/patients/recommend/', {
+      const recResponse = await fetch('http://192.168.56.1:8000/api/patients/recommend/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,6 +171,14 @@ export default function PatientRecommendation() {
     }
   };
 
+   const phases = [
+    { icon: Brain, title: 'Analyzing Patient Data', desc: 'Processing clinical information with BioBERT' },
+    { icon: Activity, title: 'Generating Embeddings', desc: 'Creating 768-dimensional semantic vectors' },
+    { icon: Zap, title: 'Matching Medicines', desc: 'Searching 1000+ medicines using FAISS index' },
+    { icon: Shield, title: 'Safety Validation', desc: 'Checking allergies and contraindications' },
+    { icon: Pill, title: 'Finalizing Results', desc: 'Ranking by confidence and safety scores' }
+  ];
+
   const getSafetyColor = (isSafe) => isSafe ? '#10b981' : '#ef4444';
   const getConfidenceColor = (confidence) => {
     const conf = confidence.toLowerCase();
@@ -146,7 +192,7 @@ export default function PatientRecommendation() {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%)',
       padding: '2rem',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     },
     card: {
       background: 'rgba(255, 255, 255, 0.98)',
@@ -175,8 +221,9 @@ export default function PatientRecommendation() {
     grid: {
       display: 'grid',
       gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-      gap: '1.5rem',
-      marginBottom: '2rem'
+      gap: '4rem',
+      marginBottom: '2rem',
+      paddingRight: '1.5rem'
     },
     formGroup: {
       marginBottom: '1.5rem'
@@ -400,27 +447,91 @@ export default function PatientRecommendation() {
         `}
       </style>
 
-      {/* Loading Overlay */}
+      {/* Cinematic Loading Screen */}
       {loading && (
         <div style={s.loadingOverlay}>
-          <div style={s.loadingCard}>
-            <div style={s.spinner}></div>
-            <div style={s.loadingTitle}>
-              <Sparkles size={32} style={{display: 'inline', marginRight: '10px'}} />
-              Processing Patient Information
+          {/* Animated particles */}
+          {particles.map(p => (
+            <div
+              key={p.id}
+              style={{
+                ...s.particle,
+                left: `${p.x}%`,
+                width: `${p.size}px`,
+                height: `${p.size}px`,
+                animationDuration: `${p.duration}s`,
+                animationDelay: `${Math.random() * 2}s`
+              }}
+            />
+          ))}
+
+          {/* Glow orb */}
+          <div style={s.glowOrb} />
+
+          <div style={s.loadingContent}>
+            {/* Main icon */}
+            <div style={s.mainIcon}>
+              <div style={s.iconRing} />
+              <div style={s.iconCircle}>
+                {React.createElement(phases[loadingPhase].icon, {
+                  size: 70,
+                  color: 'white',
+                  strokeWidth: 2.5
+                })}
+              </div>
             </div>
-            <div style={s.loadingSubtitle}>
-              Embedding clinical data and generating personalized medicine recommendations
+
+            {/* Phase info */}
+            <div style={s.phaseTitle}>
+              {phases[loadingPhase].title}
             </div>
-            <div style={s.progressBar}>
-              <div style={{...s.progressFill, width: `${progress}%`}}></div>
+            <div style={s.phaseDesc}>
+              {phases[loadingPhase].desc}
             </div>
-            <div style={s.progressText}>{Math.round(progress)}%</div>
-            <div style={{color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.9rem', marginTop: '1rem'}}>
-              {progress < 30 && '🔍 Validating patient data...'}
-              {progress >= 30 && progress < 60 && '🧠 Generating BioBERT embeddings...'}
-              {progress >= 60 && progress < 85 && '💊 Matching medicines with semantic similarity...'}
-              {progress >= 85 && '✅ Running safety checks and filtering...'}
+
+            {/* Progress bar */}
+            <div style={s.progressContainer}>
+              <div style={s.progressBar}>
+                <div style={{...s.progressFill, width: `${progress}%`}} />
+              </div>
+              <div style={s.progressText}>{Math.round(progress)}%</div>
+            </div>
+
+            {/* Phase indicators */}
+            <div style={s.phaseIndicators}>
+              {phases.map((phase, idx) => {
+                const PhaseIcon = phase.icon;
+                const isActive = idx === loadingPhase;
+                const isDone = idx < loadingPhase;
+                
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      ...s.phaseBox,
+                      ...(isActive ? s.phaseBoxActive : {})
+                    }}
+                  >
+                    <div style={{
+                      ...s.phaseIcon,
+                      ...(isActive ? s.phaseIconActive : {})
+                    }}>
+                      <PhaseIcon
+                        size={24}
+                        color={isDone ? '#10b981' : isActive ? '#a78bfa' : 'rgba(255,255,255,0.3)'}
+                        strokeWidth={isActive ? 3 : 2}
+                      />
+                    </div>
+                    <div style={{
+                      ...s.phaseName,
+                      ...(isActive ? s.phaseNameActive : {}),
+                      ...(isDone ? {color: '#10b981'} : {})
+                    }}>
+                      {isDone ? '✓ ' : ''}{phase.title.split(' ')[0]}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
