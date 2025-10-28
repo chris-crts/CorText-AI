@@ -3,6 +3,13 @@ import logging
 import time
 from typing import List, Dict, Tuple, Optional
 
+import json
+import logging
+import time
+import os
+
+from datetime import datetime
+
 import numpy as np
 import faiss
 import requests
@@ -697,20 +704,6 @@ class Medicine_Extractor:
         
         logger.info(f"✅ Batch added {len(new_vectors)} medicines to database")
         return medicines_list
-    
-
-import json
-import logging
-import time
-from typing import List, Dict, Tuple, Optional
-from datetime import datetime
-
-import numpy as np
-import faiss
-import torch
-from transformers import AutoTokenizer, AutoModel
-
-logger = logging.getLogger(__name__)
 
 
 class PatientInfo_Extractor:
@@ -869,37 +862,49 @@ class PatientInfo_Extractor:
         json_path: str = "patients_metadata.json"
     ) -> Dict:
         """
-        Save patient to vector database (dual format).
+        Save patient to vector database (dual format: FAISS + JSON).
+        Handles missing or corrupted FAISS index gracefully.
         """
         try:
-            # Load existing database
-            index = faiss.read_index(ann_path)
-            with open(json_path, "r") as f:
-                json_data = json.load(f)
-            patients = json_data.get("patients", [])
+            # Check if FAISS index exists and is non-empty
+            if os.path.exists(ann_path) and os.path.getsize(ann_path) > 0:
+                try:
+                    index = faiss.read_index(ann_path)
+                except Exception as e:
+                    logger.warning(f"⚠️ FAISS index read failed: {e}. Rebuilding index.")
+                    index = faiss.IndexFlatL2(self.vector_dim)
+            else:
+                raise FileNotFoundError("Index file missing or empty")
+
+            # Load JSON metadata
+            if os.path.exists(json_path):
+                with open(json_path, "r") as f:
+                    json_data = json.load(f)
+                patients = json_data.get("patients", [])
+            else:
+                raise FileNotFoundError("Metadata file missing")
         except FileNotFoundError:
-            # Create new database
-            logger.info("Creating new patient database...")
+            logger.info("📁 Creating new patient database...")
             index = faiss.IndexFlatL2(self.vector_dim)
             patients = []
             json_data = {"metadata": {}, "patients": []}
-        
+
         # Auto-generate ID if needed
         if not patient_data.get("id"):
             next_idx = len(patients)
             patient_data["id"] = f"patient_{next_idx:03d}"
-        
+
         # Embed if not already embedded
         if "embedding" not in patient_data:
             patient_data = self.embed_patient(patient_data)
-        
+
         # Add to FAISS index
         vector = np.array(patient_data["embedding"], dtype="float32").reshape(1, -1)
         index.add(vector)
-        
+
         # Add to patients list
         patients.append(patient_data)
-        
+
         # Update metadata
         json_data["metadata"] = {
             "total_patients": len(patients),
@@ -908,14 +913,15 @@ class PatientInfo_Extractor:
             "last_updated": datetime.now().isoformat()
         }
         json_data["patients"] = patients
-        
+
         # Save both files
         faiss.write_index(index, ann_path)
         with open(json_path, "w") as f:
             json.dump(json_data, f, indent=2)
-        
+
         logger.info(f"✅ Patient saved: {patient_data['id']}")
         return patient_data
+
 
     def check_contraindications(
         self,

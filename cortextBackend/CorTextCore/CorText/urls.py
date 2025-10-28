@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import patient_views
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -34,5 +35,15 @@ urlpatterns = [
     
     # List all medicines (paginated)
     path('api/medicines/list/', views.list_medicines, name='list_medicines'),
+    
+    # Patient endpoints
+    path('api/patients/add/', patient_views.add_patient, name='add_patient'),
+    path('api/patients/recommend/', patient_views.generate_recommendations, name='generate_recommendations'),
+    path('api/patients/<str:patient_id>/recommendations/', patient_views.get_patient_recommendations, name='get_patient_recommendations'),
+    path('api/patients/stats/', patient_views.get_patient_stats, name='patient_stats'),
+    path('api/patients/list/', patient_views.list_patients, name='list_patients'),
+    
+    # Recommendation management
+    path('api/recommendations/<int:recommendation_id>/approve/', patient_views.approve_recommendation, name='approve_recommendation'),
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
