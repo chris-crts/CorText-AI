@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import patient_views
+from . import getAllPatient
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -45,5 +46,7 @@ urlpatterns = [
     
     # Recommendation management
     path('api/recommendations/<int:recommendation_id>/approve/', patient_views.approve_recommendation, name='approve_recommendation'),
+    
+    path('api/patients/all/', getAllPatient.get_all_patients, name='get_patient_details'),
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
