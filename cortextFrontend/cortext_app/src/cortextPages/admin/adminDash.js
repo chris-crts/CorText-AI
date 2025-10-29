@@ -335,8 +335,11 @@ export default function AdminDash() {
         <button style={Styles.Go_button} onClick={() => window.location.href = '/medicinePage'}>
           Go to Medicine Page
         </button>
-          <button style={Styles.Go_button} onClick={() => window.location.href = '/addMedicinePage'}>
+        <button style={Styles.Go_button} onClick={() => window.location.href = '/addMedicinePage'}>
           Add Medicine Data
+        </button>
+         <button style={Styles.Go_button} onClick={() => window.location.href = '/patientProfile'}>
+          Go To Patient Profiles
         </button>
       </motion.div>
     </motion.div>
