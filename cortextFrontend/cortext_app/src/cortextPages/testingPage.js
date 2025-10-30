@@ -174,7 +174,7 @@ export default function PatientRecommendation() {
    const phases = [
     { icon: Brain, title: 'Analyzing Patient Data', desc: 'Processing clinical information with BioBERT' },
     { icon: Activity, title: 'Generating Embeddings', desc: 'Creating 768-dimensional semantic vectors' },
-    { icon: Zap, title: 'Matching Medicines', desc: 'Searching 1000+ medicines using FAISS index' },
+    { icon: Zap, title: 'Matching Medicines', desc: 'Searching 800+ medicines using FAISS index' },
     { icon: Shield, title: 'Safety Validation', desc: 'Checking allergies and contraindications' },
     { icon: Pill, title: 'Finalizing Results', desc: 'Ranking by confidence and safety scores' }
   ];
