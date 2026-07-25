@@ -1,12 +1,22 @@
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth import login, logout, authenticate
-
-from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
-
-from django.contrib.auth.hashers import check_password, make_password
-from .models import CustomUser, ManualAdmin
 import json
+import logging
+
+from django.contrib.auth import login, logout, authenticate
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.hashers import check_password, make_password
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import CustomUser, ManualAdmin
+from .serializers import CustomUserSerializer
+
+from CorText.models import Medicine
+from CorText.utils.semantic_extractor import Medicine_Extractor
 
 @csrf_exempt
 def signup_view(request):
@@ -260,12 +270,6 @@ def logout_view(request):
 #------------------------------------------------------------------------------------------------------------------------------# 
 # The following codes are for the dashboard to fetch user details :)------------------------------------------------------------------------------------------------------------------------------#
 
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from .serializers import CustomUserSerializer
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_profile(request):
@@ -275,15 +279,6 @@ def get_user_profile(request):
         return Response({'error': 'Not authenticated'}, status=403)
     serializer = CustomUserSerializer(request.user)
     return Response(serializer.data)
-
-
-
-# core/views.py
-
-from django.http import JsonResponse
-from CorText.models import Medicine
-from CorText.utils.semantic_extractor import Medicine_Extractor
-import json
 
 def save_all_medicines(request):
     """Save multiple medicines to the database in bulk"""
@@ -338,13 +333,6 @@ def save_all_medicines(request):
         "total": len(medicines_data),
         "errors": errors if errors else None
     })
-
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_http_methods
-from CorText.utils.semantic_extractor import Medicine_Extractor
-import json
-import logging
 
 logger = logging.getLogger(__name__)
 
