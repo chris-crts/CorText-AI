@@ -4,10 +4,22 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-5@c@4zw!f)6bc@v()_!8dls$%9miq$i=3-2x*+s8fo2aburp%e'
+import environ
 
-DEBUG = True
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.56.1']
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Initialize environ
+env = environ.Env()
+environ.Env.read_env(BASE_DIR / ".env")
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = env("SECRET_KEY")
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env.bool("DEBUG", default=False)
+
+# Hosts allowed to connect
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["127.0.0.1", "localhost"])
 
 # ------------------------------
 # SESSION & CSRF CONFIG
@@ -54,13 +66,13 @@ CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://192.168.56.1:3000",
+    "http://your_ip:3000",
 ]
 
 # Allow CSRF from frontend origins
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
-    "http://192.168.56.1:3000",
+    "http://your_ip:3000",
 ]
 
 # ------------------------------
@@ -108,9 +120,9 @@ WSGI_APPLICATION = 'CorTextCore.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'CorText_DataBase',
-        'USER': 'keith_user',
-        'PASSWORD': '113728cortes',
+        'NAME': '_DataBaseName',
+        'USER': 'your_username',
+        'PASSWORD': 'your_pass',
         'HOST': '127.0.0.1',
         'PORT': '5432',
     }
